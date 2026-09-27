@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>The Standard Technology Chronicle</title>
+    <link>https://techchronicle.example.com</link>
+    <description>Daily reporting on semiconductor physics and deep computing</description>
+    <item>
+      <title>Optical Interconnect Standard Ratified for Distributed AI Clusters</title>
+      <link>https://techchronicle.example.com/2026/09/optical-interconnect-standard</link>
+      <guid isPermaLink="false">tc-article-109283</guid>
+      <!-- Updated description with newly revealed specifications -->
+      <description><![CDATA[UPDATED: Leading silicon foundries and network equipment vendors have approved a new optical interconnect architecture, officially guaranteeing 800Gbps lane bandwidth and reducing inter-rack power draw by 42 percent.]]></description>
+      <pubDate>Sun, 27 Sep 2026 04:30:00 GMT</pubDate>
+      <atom:updated xmlns:atom="http://www.w3.org/2005/Atom">2026-09-27T08:15:00Z</atom:updated>
+    </item>
+  </channel>
+</rss>

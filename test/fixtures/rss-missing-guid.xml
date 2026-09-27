@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Global Aerospace Dispatches</title>
+    <link>https://aerospace.example.com</link>
+    <description>Missions and orbital telemetry</description>
+    <item>
+      <title>Heavy-Lift Methane Propulsion Engine Completes Qualification Static Fire</title>
+      <link>https://aerospace.example.com/dispatches/methane-propulsion-qualification</link>
+      <!-- Guid deliberately omitted to test fallback -->
+      <description>The four-minute test burn at the Boca Chica facility verified combustion chamber pressures.</description>
+      <pubDate>Sun, 27 Sep 2026 02:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

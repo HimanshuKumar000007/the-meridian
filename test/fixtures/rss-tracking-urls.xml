@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Marketing Heavy Syndicate</title>
+    <link>https://syndicate.example.com</link>
+    <description>Syndicated articles with heavy campaign tracking parameters</description>
+    <item>
+      <title>Optical Interconnect Standard Ratified for Distributed AI Clusters</title>
+      <link>https://techchronicle.example.com/2026/09/optical-interconnect-standard?utm_source=rss&amp;utm_medium=syndicate&amp;utm_campaign=q3_tech&amp;fbclid=IwAR123XYZ&amp;ref=digest#comments</link>
+      <guid>https://techchronicle.example.com/2026/09/optical-interconnect-standard?utm_source=rss</guid>
+      <description>Leading silicon foundries and network equipment vendors have approved a new optical interconnect architecture designed to cut latency by 35 percent.</description>
+      <pubDate>Sun, 27 Sep 2026 04:30:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Autonomous Systems Review</title>
+  <subtitle>Research and verification in frontier robotics</subtitle>
+  <link href="https://autoreview.example.com/atom.xml" rel="self" />
+  <link href="https://autoreview.example.com" />
+  <updated>2026-09-27T06:00:00Z</updated>
+  <id>urn:uuid:60a76c80-d399-11d9-b93C-0003939e0af6</id>
+
+  <entry>
+    <title>Formal Methods Framework Verified for Multi-Agent Industrial Robotics</title>
+    <link rel="alternate" href="https://autoreview.example.com/papers/formal-multi-agent-verification" />
+    <id>tag:autoreview.example.com,2026:entry-8821</id>
+    <published>2026-09-27T03:45:00Z</published>
+    <updated>2026-09-27T05:30:00Z</updated>
+    <summary>A mathematical verification framework proves safety boundaries across fleets of autonomous materials-handling vehicles.</summary>
+    <author>
+      <name>Julian Foster</name>
+    </author>
+    <category term="Robotics" />
+    <category term="Safety" />
+  </entry>
+</feed>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Sovereign Capital Bulletin</title>
+    <link>https://capital.example.com</link>
+    <description>Central banking and debt markets</description>
+    <item>
+      <title>European Central Bank Deliberates Liquidity Facilities Ahead of Autumn Fiscal Cycle</title>
+      <link>https://capital.example.com/bonds/ecb-liquidity-deliberation</link>
+      <guid>cap-83921</guid>
+      <description>Governing Council members assess commercial banking liquidity balances.</description>
+      <!-- pubDate deliberately omitted to test fallback to discovered timestamp -->
+    </item>
+  </channel>
+</rss>

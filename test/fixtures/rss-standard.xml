@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>The Standard Technology Chronicle</title>
+    <link>https://techchronicle.example.com</link>
+    <description>Daily reporting on semiconductor physics and deep computing</description>
+    <language>en-US</language>
+    <item>
+      <title>Optical Interconnect Standard Ratified for Distributed AI Clusters</title>
+      <link>https://techchronicle.example.com/2026/09/optical-interconnect-standard</link>
+      <guid isPermaLink="false">tc-article-109283</guid>
+      <description><![CDATA[Leading silicon foundries and network equipment vendors have approved a new optical interconnect architecture designed to cut latency by 35 percent.]]></description>
+      <pubDate>Sun, 27 Sep 2026 04:30:00 GMT</pubDate>
+      <dc:creator>Sarah Lin</dc:creator>
+      <category>Hardware</category>
+      <category>Semiconductors</category>
+      <media:content url="https://techchronicle.example.com/images/optical-die.jpg" type="image/jpeg" medium="image" />
+    </item>
+    <item>
+      <title>Cryogenic Optical Probes Accelerate Fault-Tolerant Qubit Fidelity</title>
+      <link>https://techchronicle.example.com/2026/09/cryogenic-optical-qubits</link>
+      <guid isPermaLink="false">tc-article-109284</guid>
+      <description><![CDATA[Researchers maintain quantum coherence across hundreds of physical superconducting circuits using sub-millikelvin optical sensors.]]></description>
+      <pubDate>Sun, 27 Sep 2026 05:15:00 GMT</pubDate>
+      <dc:creator>Dr. Helen Vance</dc:creator>
+      <category>Quantum</category>
+      <enclosure url="https://techchronicle.example.com/images/cryostat-chamber.jpg" length="124500" type="image/jpeg" />
+    </item>
+  </channel>
+</rss>
