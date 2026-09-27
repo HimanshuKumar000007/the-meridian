@@ -1,0 +1,50 @@
+name: Meridian Automation Orchestrator
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger Meridian Orchestrator
+        env:
+          AUTOMATION_CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET }}
+          VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
+        run: |
+          echo "Starting automated news pipeline orchestration trigger..."
+
+          EXTRA_HEADERS=()
+          if [ -n "$VERCEL_PROTECTION_BYPASS" ]; then
+            EXTRA_HEADERS+=(-H "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}")
+          fi
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            --max-time 60 \
+            --retry 1 \
+            --retry-delay 2 \
+            -X POST \
+            -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            "${EXTRA_HEADERS[@]}" \
+            https://the-meridian-aptionaiged-4225.vercel.app/api/automation/orchestrator)
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "Response HTTP Status: $HTTP_CODE"
+
+          # 200 OK (Completed/Partial) or 409 Conflict (RUN_ALREADY_IN_PROGRESS) are safe success states
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "Orchestrator completed cycle successfully."
+            exit 0
+          elif [ "$HTTP_CODE" -eq 409 ]; then
+            echo "Orchestrator run already in progress (safe concurrency no-op)."
+            exit 0
+          else
+            echo "Orchestrator failed with HTTP status $HTTP_CODE."
+            exit 1
+          fi
