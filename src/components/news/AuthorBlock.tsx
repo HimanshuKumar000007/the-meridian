@@ -56,7 +56,12 @@ export const AuthorBlock: React.FC<AuthorBlockProps> = ({
       <div className="flex-1 min-w-0">
         <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
           <h3 className="font-serif text-lg font-bold text-stone-900">
-            {author.name}
+            <a
+              href={`/author/${author.slug || author.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`}
+              className="hover:underline hover:text-stone-700 transition-colors"
+            >
+              {author.name}
+            </a>
           </h3>
           {displayDate && (
             <span className="text-[11px] font-sans text-stone-500">

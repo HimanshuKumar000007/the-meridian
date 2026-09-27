@@ -19,12 +19,16 @@
     <meta name="twitter:title" content="The Meridian — Global News, Technology, AI & World Affairs" />
     <meta name="twitter:description" content="Independent global journalism delivering rigorous reporting and timely analysis on artificial intelligence, science, business, technology, gaming, and world affairs." />
 
+    <!-- Brand Favicon & Icons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="https://themeridian.news/" />
+
     <!-- Google Web Fonts: Newsreader (Editorial Serif) & Plus Jakarta Sans (Clean Modern Sans) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
-    <!-- Structured Data: NewsMediaOrganization & WebSite -->
+    <!-- Structured Data: NewsMediaOrganization & WebSite (No deprecated SearchAction) -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -35,23 +39,20 @@
           "url": "https://themeridian.news",
           "logo": {
             "@type": "ImageObject",
-            "url": "https://themeridian.news/logo.png"
+            "url": "https://themeridian.news/favicon.svg",
+            "width": 512,
+            "height": 512
           },
           "publishingPrinciples": "https://themeridian.news/editorial-policy",
           "correctionsPolicy": "https://themeridian.news/corrections",
-          "ethicsPolicy": "https://themeridian.news/ethics",
-          "diversityPolicy": "https://themeridian.news/diversity",
-          "masthead": "https://themeridian.news/masthead"
+          "ethicsPolicy": "https://themeridian.news/editorial-policy",
+          "diversityPolicy": "https://themeridian.news/about",
+          "masthead": "https://themeridian.news/about"
         },
         {
           "@type": "WebSite",
           "name": "The Meridian",
-          "url": "https://themeridian.news",
-          "potentialAction": {
-            "@type": "SearchAction",
-            "target": "https://themeridian.news/search?q={search_term_string}",
-            "query-input": "required name=search_term_string"
-          }
+          "url": "https://themeridian.news"
         }
       ]
     }

@@ -21,7 +21,9 @@
     "publishing:test": "tsx test-publishing.ts",
     "automation:run": "tsx scripts/run-automation.ts",
     "automation:test": "tsx test-automation.ts",
-    "search:test": "tsx test-search-trending.ts"
+    "search:test": "tsx test-search-trending.ts",
+    "seo:test": "tsx test-seo.ts",
+    "seo:audit": "tsx scripts/seo-audit.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

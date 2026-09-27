@@ -1,0 +1,16 @@
+# Robots.txt for The Meridian — Global News Platform
+# Compliant with RFC 9309 (Robots Exclusion Protocol)
+
+User-agent: *
+Allow: /
+
+# Protected internal and API paths
+Disallow: /api/
+Disallow: /automation/
+Disallow: /internal/
+Disallow: /admin/
+Disallow: /debug/
+Disallow: /test/
+
+# Global XML Sitemap
+Sitemap: https://themeridian.news/sitemap.xml

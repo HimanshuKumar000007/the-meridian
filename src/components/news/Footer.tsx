@@ -68,49 +68,69 @@ export const Footer: React.FC<FooterProps> = ({ onSelectCategory, onOpenPolicyMo
             </h3>
             <ul className="space-y-2 text-stone-400">
               <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('editorial-policy')}
-                  className="hover:text-white transition-colors text-left"
+                <a
+                  href="/editorial-policy"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/editorial-policy');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
                 >
-                  Editorial Guidelines
-                </button>
+                  Editorial Guidelines & AI
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('fact-checking')}
-                  className="hover:text-white transition-colors text-left"
+                <a
+                  href="/editorial-policy"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/editorial-policy');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
                 >
                   Fact-Checking Standards
-                </button>
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('corrections')}
-                  className="hover:text-white transition-colors text-left"
+                <a
+                  href="/corrections"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/corrections');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
                 >
                   Corrections & Clarifications
-                </button>
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('ethics')}
-                  className="hover:text-white transition-colors text-left"
+                <a
+                  href="/ethics"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/ethics');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
                 >
                   Code of Journalistic Ethics
-                </button>
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('masthead')}
-                  className="hover:text-white transition-colors text-left"
+                <a
+                  href="/masthead"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/masthead');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
                 >
                   Masthead & Bureau Leadership
-                </button>
+                </a>
               </li>
             </ul>
           </div>
@@ -122,49 +142,56 @@ export const Footer: React.FC<FooterProps> = ({ onSelectCategory, onOpenPolicyMo
             </h3>
             <ul className="space-y-2 text-stone-400">
               <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('about')}
-                  className="hover:text-white transition-colors text-left"
+                <a
+                  href="/about"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/about');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
                 >
                   About The Meridian
-                </button>
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('press')}
-                  className="hover:text-white transition-colors text-left"
-                >
-                  Press Inquiries
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('careers')}
-                  className="hover:text-white transition-colors text-left"
-                >
-                  Careers & Fellowships
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('syndication')}
-                  className="hover:text-white transition-colors text-left"
-                >
-                  Syndication & Permissions
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('contact')}
-                  className="hover:text-white transition-colors text-left"
+                <a
+                  href="/contact"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/contact');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
                 >
                   Contact Editorial Bureaus
-                </button>
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/about"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/about');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
+                >
+                  Press & Fellowships
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/terms"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/terms');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
+                >
+                  Syndication & Permissions
+                </a>
               </li>
             </ul>
           </div>
@@ -176,31 +203,43 @@ export const Footer: React.FC<FooterProps> = ({ onSelectCategory, onOpenPolicyMo
             </h3>
             <ul className="space-y-2 text-stone-400">
               <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('privacy')}
-                  className="hover:text-white transition-colors text-left"
+                <a
+                  href="/privacy"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/privacy');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
                 >
                   Privacy Policy
-                </button>
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('terms')}
-                  className="hover:text-white transition-colors text-left"
+                <a
+                  href="/terms"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/terms');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
                 >
                   Terms of Service
-                </button>
+                </a>
               </li>
               <li>
-                <button
-                  type="button"
-                  onClick={() => onOpenPolicyModal?.('accessibility')}
-                  className="hover:text-white transition-colors text-left"
+                <a
+                  href="/editorial-policy"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState(null, '', '/editorial-policy');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  className="hover:text-white transition-colors text-left block"
                 >
-                  Accessibility Statement
-                </button>
+                  Accessibility & Compliance
+                </a>
               </li>
               <li>
                 <button

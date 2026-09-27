@@ -4,12 +4,17 @@
  */
 
 import type { Story } from '../../types/story';
+import { getSiteUrl, getCanonicalUrl, SEO_CONFIG } from '../../config/seoConfig';
 
 export class RssFeedService {
   private baseUrl: string;
 
-  constructor(baseUrl: string = 'https://themeridian.news') {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+  constructor(baseUrl?: string) {
+    this.baseUrl = baseUrl ? baseUrl.replace(/\/+$/, '') : getSiteUrl();
+  }
+
+  public static generateRssXml(publishedStories: Story[]): string {
+    return new RssFeedService().generateRssXml(publishedStories);
   }
 
   /**
@@ -20,17 +25,21 @@ export class RssFeedService {
     const buildDate = new Date().toUTCString();
 
     const itemsXml = publishedStories
-      .filter(
-        (s) => (s.status === 'published' || s.lifecycleStatus === 'published') && s.slug
-      )
+      .filter((s) => {
+        const isPublished = (s.status === 'published' || s.lifecycleStatus === 'published');
+        return isPublished && Boolean(s.slug);
+      })
       .map((s) => {
-        const storyUrl = `${this.baseUrl}/story/${s.slug}`;
+        const storyUrl = getCanonicalUrl(`/story/${s.slug}`);
         const pubDate = new Date(
           s.published_at || s.publishedAt || Date.now()
         ).toUTCString();
         const authorName = s.author?.name || 'The Meridian Editorial Staff';
         const categoryName = s.category || 'News';
-        const cleanTitle = (s.title || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const cleanTitle = (s.title || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
         const cleanSummary = (s.summary || s.dek || '')
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
@@ -51,9 +60,9 @@ export class RssFeedService {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>The Meridian — Global News Platform</title>
+    <title>${SEO_CONFIG.siteName} — Global News Platform</title>
     <link>${this.baseUrl}</link>
-    <description>Independent, fact-verified global journalism and intelligence.</description>
+    <description>${SEO_CONFIG.defaultDescription}</description>
     <language>en-us</language>
     <lastBuildDate>${buildDate}</lastBuildDate>
     <atom:link href="${this.baseUrl}/rss.xml" rel="self" type="application/rss+xml" />

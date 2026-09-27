@@ -25,6 +25,8 @@ import { HomepageLoading } from './components/news/HomepageLoading';
 import { CategoryPage } from './components/news/CategoryPage';
 import { CategoryError } from './components/news/CategoryError';
 import { SearchPage } from './components/news/SearchPage';
+import { AuthorPage } from './components/news/AuthorPage';
+import { TransparencyPage, type TransparencyTopic } from './components/news/TransparencyPage';
 import type { HomepageData } from './types/repository';
 
 interface StoryRouteProps {
@@ -121,6 +123,8 @@ type RouteState =
   | { type: 'story'; slug: string }
   | { type: 'category'; categorySlug: string; subcategorySlug: string }
   | { type: 'search'; query: string; category?: string }
+  | { type: 'author'; slug: string }
+  | { type: 'transparency'; topic: TransparencyTopic }
   | { type: 'not-found'; path: string };
 
 function parseCurrentRoute(): RouteState {
@@ -148,7 +152,31 @@ function parseCurrentRoute(): RouteState {
     return { type: 'not-found', path: pathname };
   }
 
-  // 3. Category route: /[category] or /[category]/[subcategory]
+  // 3. Author route: /author/[slug]
+  if (parts[0] === 'author') {
+    if (parts[1]) {
+      return { type: 'author', slug: parts[1] };
+    }
+    return { type: 'not-found', path: pathname };
+  }
+
+  // 4. Publisher Transparency & Policy routes
+  const TRANSPARENCY_TOPICS: TransparencyTopic[] = [
+    'about',
+    'contact',
+    'editorial-policy',
+    'corrections',
+    'privacy',
+    'terms',
+    'ethics',
+    'diversity',
+    'masthead',
+  ];
+  if (TRANSPARENCY_TOPICS.includes(parts[0] as TransparencyTopic)) {
+    return { type: 'transparency', topic: parts[0] as TransparencyTopic };
+  }
+
+  // 5. Category route: /[category] or /[category]/[subcategory]
   const categorySlug = parts[0];
   const subcategorySlug = parts[1] || 'all';
 
@@ -489,6 +517,24 @@ export default function App() {
             onOpenSearch={() => setIsSearchOpen(true)}
             suggestedStories={topStories}
             allStories={allStories}
+          />
+        ) : route.type === 'author' ? (
+          // ================= AUTHOR PROFILE ROUTE (/author/[slug]) =================
+          <AuthorPage
+            slug={route.slug}
+            onNavigateHome={navigateToHome}
+            onSelectStory={handleSelectStory}
+            onSelectCategory={navigateToCategory}
+          />
+        ) : route.type === 'transparency' ? (
+          // ================= PUBLISHER TRANSPARENCY ROUTE (/about, /contact, etc.) =================
+          <TransparencyPage
+            topic={route.topic}
+            onNavigateHome={navigateToHome}
+            onSelectTopic={(t) => {
+              window.history.pushState(null, '', `/${t}`);
+              setRoute({ type: 'transparency', topic: t });
+            }}
           />
         ) : (
           // ================= 404 NOT FOUND =================

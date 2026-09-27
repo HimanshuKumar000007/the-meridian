@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="12" fill="#141517"/>
+  <!-- Elegant Meridian Prime Arch / Globe Line -->
+  <circle cx="32" cy="32" r="26" fill="none" stroke="#FAF9F6" stroke-width="1.5" stroke-opacity="0.3"/>
+  <ellipse cx="32" cy="32" rx="13" ry="26" fill="none" stroke="#FAF9F6" stroke-width="1.5" stroke-opacity="0.4"/>
+  <!-- Central Serif Monogram 'M' -->
+  <text x="32" y="44" font-family="Georgia, 'Newsreader', serif" font-size="34" font-weight="700" fill="#FAF9F6" text-anchor="middle">M</text>
+  <!-- Accent Meridian Compass Point -->
+  <circle cx="32" cy="11" r="2" fill="#DC2626"/>
+</svg>

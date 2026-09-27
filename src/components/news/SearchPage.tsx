@@ -70,6 +70,33 @@ export const SearchPage: React.FC<SearchPageProps> = ({
     setQuery(initialQuery);
   }, [initialQuery]);
 
+  // Enforce noindex, follow on internal search results per Google Search Central guidance
+  useEffect(() => {
+    const originalTitle = document.title;
+    document.title = query ? `Search: ${query} — The Meridian` : `Search — The Meridian`;
+
+    let robotsMeta = document.querySelector('meta[name="robots"]');
+    const createdRobots = !robotsMeta;
+    if (!robotsMeta) {
+      robotsMeta = document.createElement('meta');
+      robotsMeta.setAttribute('name', 'robots');
+      document.head.appendChild(robotsMeta);
+    }
+    const prevRobots = robotsMeta.getAttribute('content');
+    robotsMeta.setAttribute('content', 'noindex, follow');
+
+    return () => {
+      document.title = originalTitle;
+      if (createdRobots) {
+        robotsMeta?.remove();
+      } else if (prevRobots) {
+        robotsMeta?.setAttribute('content', prevRobots);
+      } else {
+        robotsMeta?.removeAttribute('content');
+      }
+    };
+  }, [query]);
+
   // Execute search
   const executeSearch = useCallback(async () => {
     setIsLoading(true);

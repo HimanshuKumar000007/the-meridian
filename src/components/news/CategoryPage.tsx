@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import type { NewsCategory, CategorySortMode, CategoryPageData } from '../../types/category';
 import type { Story } from '../../data/mockNews';
+import { SeoService } from '../../services/seo/SeoService';
 import { newsRepository } from '../../data/newsRepository';
 import { CategoryBreadcrumb } from './CategoryBreadcrumb';
 import { CategoryHero } from './CategoryHero';
@@ -40,27 +41,51 @@ export const CategoryPage: React.FC<CategoryPageProps> = ({
     setActiveSubcategory(initialSubcategory || 'all');
   }, [initialSubcategory]);
 
-  // Update dynamic document SEO & BreadcrumbList structured data
+  // Update dynamic document SEO, canonical link, & BreadcrumbList structured data
   useEffect(() => {
     const originalTitle = document.title;
-    document.title = `${category.name} News, Analysis & Reports — The Meridian`;
+    const seoMeta = SeoService.generateCategoryMeta(
+      category.name,
+      category.slug,
+      category.description,
+      activeSubcategory !== 'all' ? activeSubcategory : undefined
+    );
+    document.title = seoMeta.title;
+
+    // Helper to set or create meta tag
+    const setMeta = (attr: string, key: string, content: string) => {
+      let el = document.querySelector(`meta[${attr}="${key}"]`);
+      if (!el) {
+        el = document.createElement('meta');
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+      }
+      el.setAttribute('content', content);
+    };
 
     // Update meta description
-    let metaDesc = document.querySelector('meta[name="description"]');
-    if (!metaDesc) {
-      metaDesc = document.createElement('meta');
-      metaDesc.setAttribute('name', 'description');
-      document.head.appendChild(metaDesc);
+    setMeta('name', 'description', seoMeta.description);
+
+    // Update canonical link
+    let canonicalTag = document.querySelector('link[rel="canonical"]');
+    if (!canonicalTag) {
+      canonicalTag = document.createElement('link');
+      canonicalTag.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonicalTag);
     }
-    metaDesc.setAttribute('content', category.description);
+    canonicalTag.setAttribute('href', seoMeta.canonicalUrl);
 
-    // Update OpenGraph Title & Description
-    const ogTitle = document.querySelector('meta[property="og:title"]');
-    if (ogTitle) ogTitle.setAttribute('content', `${category.name} News — The Meridian`);
-    const ogDesc = document.querySelector('meta[property="og:description"]');
-    if (ogDesc) ogDesc.setAttribute('content', category.description);
+    // Update OpenGraph metadata
+    Object.entries(seoMeta.og).forEach(([key, val]) => {
+      setMeta('property', key, val);
+    });
 
-    // Dynamic BreadcrumbList JSON-LD Structured Data
+    // Update Twitter card metadata
+    Object.entries(seoMeta.twitter).forEach(([key, val]) => {
+      setMeta('name', key, val);
+    });
+
+    // Dynamic BreadcrumbList & CollectionPage JSON-LD Structured Data
     const structuredDataId = 'meridian-category-jsonld';
     let scriptTag = document.getElementById(structuredDataId) as HTMLScriptElement | null;
     if (!scriptTag) {
@@ -69,44 +94,7 @@ export const CategoryPage: React.FC<CategoryPageProps> = ({
       scriptTag.type = 'application/ld+json';
       document.head.appendChild(scriptTag);
     }
-
-    const currentUrl = typeof window !== 'undefined' ? window.location.href : `https://themeridian.news/${category.slug}`;
-
-    const jsonLdData = {
-      '@context': 'https://schema.org',
-      '@graph': [
-        {
-          '@type': 'CollectionPage',
-          name: `${category.name} News & Coverage`,
-          description: category.description,
-          url: currentUrl,
-          isPartOf: {
-            '@type': 'WebSite',
-            name: 'The Meridian',
-            url: 'https://themeridian.news',
-          },
-        },
-        {
-          '@type': 'BreadcrumbList',
-          itemListElement: [
-            {
-              '@type': 'ListItem',
-              position: 1,
-              name: 'Home',
-              item: 'https://themeridian.news',
-            },
-            {
-              '@type': 'ListItem',
-              position: 2,
-              name: category.name,
-              item: currentUrl,
-            },
-          ],
-        },
-      ],
-    };
-
-    scriptTag.text = JSON.stringify(jsonLdData);
+    scriptTag.text = JSON.stringify(seoMeta.jsonLd);
 
     // Scroll to top on category mount
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
@@ -116,7 +104,7 @@ export const CategoryPage: React.FC<CategoryPageProps> = ({
       const script = document.getElementById(structuredDataId);
       if (script) script.remove();
     };
-  }, [category]);
+  }, [category, activeSubcategory]);
 
   const [pageData, setPageData] = useState<CategoryPageData | null>(null);
   const [isLoading, setIsLoading] = useState(true);

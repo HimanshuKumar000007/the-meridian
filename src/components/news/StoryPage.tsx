@@ -6,6 +6,7 @@
 import React, { useEffect, useMemo } from 'react';
 import type { NewsStory } from '../../types/story';
 import type { Story } from '../../data/mockNews';
+import { SeoService } from '../../services/seo/SeoService';
 import { ReadingProgress } from './ReadingProgress';
 import { StoryHeader } from './StoryHeader';
 import { StoryHero } from './StoryHero';
@@ -34,30 +35,44 @@ export const StoryPage: React.FC<StoryPageProps> = ({
   onSelectCategory,
   onSelectStory,
 }) => {
-  // Update document title, meta tags, and structured data dynamically
+  // Update document title, canonical link, meta tags, and structured data dynamically
   useEffect(() => {
     const originalTitle = document.title;
-    document.title = `${story.title} — The Meridian`;
+    const seoMeta = SeoService.generateStoryMeta(story);
+    document.title = seoMeta.title;
+
+    // Helper to set or create meta tag
+    const setMeta = (attr: string, key: string, content: string) => {
+      let el = document.querySelector(`meta[${attr}="${key}"]`);
+      if (!el) {
+        el = document.createElement('meta');
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+      }
+      el.setAttribute('content', content);
+    };
 
     // Update meta description
-    let metaDesc = document.querySelector('meta[name="description"]');
-    if (!metaDesc) {
-      metaDesc = document.createElement('meta');
-      metaDesc.setAttribute('name', 'description');
-      document.head.appendChild(metaDesc);
-    }
-    const descriptionText = story.dek || story.summary || story.title;
-    metaDesc.setAttribute('content', descriptionText);
+    setMeta('name', 'description', seoMeta.description);
 
-    // Update OpenGraph Title & Description
-    const ogTitle = document.querySelector('meta[property="og:title"]');
-    if (ogTitle) ogTitle.setAttribute('content', `${story.title} — The Meridian`);
-    const ogDesc = document.querySelector('meta[property="og:description"]');
-    if (ogDesc) ogDesc.setAttribute('content', descriptionText);
-    const ogImage = document.querySelector('meta[property="og:image"]');
-    if (ogImage && story.heroImage?.url) {
-      ogImage.setAttribute('content', story.heroImage.url);
+    // Update canonical link
+    let canonicalTag = document.querySelector('link[rel="canonical"]');
+    if (!canonicalTag) {
+      canonicalTag = document.createElement('link');
+      canonicalTag.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonicalTag);
     }
+    canonicalTag.setAttribute('href', seoMeta.canonicalUrl);
+
+    // Update OpenGraph metadata
+    Object.entries(seoMeta.og).forEach(([key, val]) => {
+      setMeta('property', key, val);
+    });
+
+    // Update Twitter card metadata
+    Object.entries(seoMeta.twitter).forEach(([key, val]) => {
+      setMeta('name', key, val);
+    });
 
     // Dynamic JSON-LD Structured Data for NewsArticle & BreadcrumbList
     const structuredDataId = 'meridian-story-jsonld';
@@ -68,68 +83,7 @@ export const StoryPage: React.FC<StoryPageProps> = ({
       scriptTag.type = 'application/ld+json';
       document.head.appendChild(scriptTag);
     }
-
-    const currentUrl = typeof window !== 'undefined' ? window.location.href : `https://themeridian.news/story/${story.slug}`;
-
-    const jsonLdData = {
-      '@context': 'https://schema.org',
-      '@graph': [
-        {
-          '@type': 'NewsArticle',
-          headline: story.title,
-          description: descriptionText,
-          url: currentUrl,
-          datePublished: story.publishedAt,
-          dateModified: story.updatedAt || story.publishedAt,
-          mainEntityOfPage: {
-            '@type': 'WebPage',
-            '@id': currentUrl,
-          },
-          author: story.author
-            ? {
-                '@type': 'Person',
-                name: story.author.name,
-                jobTitle: story.author.role,
-              }
-            : {
-                '@type': 'Organization',
-                name: 'The Meridian Editorial Team',
-              },
-          publisher: {
-            '@type': 'NewsMediaOrganization',
-            name: 'The Meridian',
-            url: 'https://themeridian.news',
-          },
-          image: story.heroImage?.url ? [story.heroImage.url] : undefined,
-          articleSection: story.category,
-        },
-        {
-          '@type': 'BreadcrumbList',
-          itemListElement: [
-            {
-              '@type': 'ListItem',
-              position: 1,
-              name: 'Home',
-              item: 'https://themeridian.news',
-            },
-            {
-              '@type': 'ListItem',
-              position: 2,
-              name: story.category,
-              item: `https://themeridian.news/${story.category.toLowerCase().replace(/\s+/g, '-')}`,
-            },
-            {
-              '@type': 'ListItem',
-              position: 3,
-              name: story.title,
-              item: currentUrl,
-            },
-          ],
-        },
-      ],
-    };
-
-    scriptTag.text = JSON.stringify(jsonLdData);
+    scriptTag.text = JSON.stringify(seoMeta.jsonLd);
 
     // Scroll to top on story mount
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
