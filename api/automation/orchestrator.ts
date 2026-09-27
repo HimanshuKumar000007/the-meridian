@@ -33,7 +33,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Strict Security Guard: SUPABASE_SERVICE_ROLE_KEY must NEVER authenticate as the cron credential
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const serviceRoleKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_SERVICE_KEY ||
+      process.env.SUPABASE_KEY;
+
     if (serviceRoleKey && serviceRoleKey.trim() !== '' && provided === serviceRoleKey.trim()) {
       return res.status(401).json({
         error: 'Unauthorized: SUPABASE_SERVICE_ROLE_KEY cannot be used as automation secret.',
@@ -48,8 +52,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://dzbggkymgdtsyvrvrrjw.supabase.co';
     if (!serviceRoleKey) {
+      const availableKeys = Object.keys(process.env).filter((k) =>
+        k.toUpperCase().includes('SUPABASE') || k.toUpperCase().includes('SECRET') || k.toUpperCase().includes('KEY')
+      );
       return res.status(500).json({
         error: 'Server Configuration Error: Missing SUPABASE_SERVICE_ROLE_KEY.',
+        availableKeys,
       });
     }
 
