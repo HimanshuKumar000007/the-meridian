@@ -8,10 +8,10 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { AutomationHealthService } from '../../src/services/automation/AutomationHealthService';
-import { SupabaseAutomationRepository } from '../../src/data/repositories/SupabaseAutomationRepository';
-import { AutomationConfigService } from '../../src/services/automation/AutomationConfigService';
-import { SchedulerCapabilityService } from '../../src/services/automation/SchedulerCapabilityService';
+import { AutomationHealthService } from '../services/automation/AutomationHealthService';
+import { SupabaseAutomationRepository } from '../data/repositories/SupabaseAutomationRepository';
+import { AutomationConfigService } from '../services/automation/AutomationConfigService';
+import { SchedulerCapabilityService } from '../services/automation/SchedulerCapabilityService';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const configService = new AutomationConfigService();
