@@ -27,6 +27,7 @@ import { CategoryError } from './components/news/CategoryError';
 import { SearchPage } from './components/news/SearchPage';
 import { AuthorPage } from './components/news/AuthorPage';
 import { TransparencyPage, type TransparencyTopic } from './components/news/TransparencyPage';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import type { HomepageData } from './types/repository';
 
 interface StoryRouteProps {
@@ -188,7 +189,7 @@ function parseCurrentRoute(): RouteState {
   return { type: 'not-found', path: categorySlug };
 }
 
-export default function App() {
+function MainApp() {
   const [route, setRoute] = useState<RouteState>(parseCurrentRoute);
   const [edition, setEdition] = useState<string>('Global');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -583,5 +584,13 @@ export default function App() {
         onClose={() => setSelectedPolicy(null)}
       />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
   );
 }

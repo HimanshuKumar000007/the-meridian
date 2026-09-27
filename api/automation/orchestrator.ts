@@ -15,6 +15,7 @@ import { PipelineOrchestrator } from '../../src/services/automation/PipelineOrch
 import { StageRunnerService } from '../../src/services/automation/StageRunnerService';
 import { SupabaseAutomationRepository } from '../../src/data/repositories/SupabaseAutomationRepository';
 import { AutomationConfigService } from '../../src/services/automation/AutomationConfigService';
+import { MonitoringService } from '../../src/services/monitoring/MonitoringService';
 import type { AutomationStage, AutomationTrigger } from '../../src/types/automation';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -67,12 +68,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ) as AutomationStage[])
       : undefined;
 
+    const monitoringService = new MonitoringService({ client: supabase });
+
     const result = await orchestrator.orchestrate({
       trigger,
       dryRun: Boolean(dryRun),
       force: Boolean(force),
       stages: validatedStages,
       limitOverride: limitOverride ? Math.max(1, Math.min(Number(limitOverride), 20)) : undefined,
+      monitoringHook: async () => {
+        await monitoringService.runHealthCheck({ persistSnapshot: true });
+      },
     });
 
     const statusCode = result.status === 'failed' ? 500 : result.status === 'skipped' ? 409 : 200;

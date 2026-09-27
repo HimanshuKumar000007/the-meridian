@@ -26,12 +26,14 @@ export interface OrchestratorOptions {
   force?: boolean;
   stages?: AutomationStage[];
   limitOverride?: number;
+  monitoringHook?: (result: OrchestratorRunResult) => Promise<void>;
 }
 
 export class PipelineOrchestrator {
   private lockService: AutomationLockService;
   private configService: AutomationConfigService;
   private capabilityService: SchedulerCapabilityService;
+  private monitoringHook?: (result: OrchestratorRunResult) => Promise<void>;
 
   constructor(
     private repository: AutomationRepository,
@@ -40,11 +42,13 @@ export class PipelineOrchestrator {
       lockService?: AutomationLockService;
       configService?: AutomationConfigService;
       capabilityService?: SchedulerCapabilityService;
+      monitoringHook?: (result: OrchestratorRunResult) => Promise<void>;
     }
   ) {
     this.lockService = options?.lockService || new AutomationLockService(this.repository);
     this.configService = options?.configService || new AutomationConfigService();
     this.capabilityService = options?.capabilityService || new SchedulerCapabilityService();
+    this.monitoringHook = options?.monitoringHook;
   }
 
   public getCapabilityService(): SchedulerCapabilityService {
@@ -326,7 +330,7 @@ export class PipelineOrchestrator {
         }
       }
 
-      return {
+      const runResult: OrchestratorRunResult = {
         runId,
         trigger,
         startedAt,
@@ -340,6 +344,17 @@ export class PipelineOrchestrator {
         metrics,
         planCapability,
       };
+
+      const hookToRun = options.monitoringHook || this.monitoringHook;
+      if (!isDryRun && hookToRun) {
+        try {
+          await hookToRun(runResult);
+        } catch (hookErr) {
+          console.warn('[PipelineOrchestrator] Non-fatal monitoring hook error:', hookErr);
+        }
+      }
+
+      return runResult;
     } finally {
       // 8. ALWAYS RELEASE LOCK
       if (lockAcquired) {
