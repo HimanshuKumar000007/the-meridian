@@ -63,6 +63,7 @@ export type DiscoveryStatus =
 export interface DiscoveryItem {
   id: string;
   sourceId: string;
+  sourceSlug?: string | null;
   sourceName: string;
   sourceType: SourceType;
 
