@@ -1,0 +1,6 @@
+{
+  "name": "The Meridian — Global News Platform",
+  "description": "Independent global journalism covering technology, artificial intelligence, science, business, gaming, and world affairs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

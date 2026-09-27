@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Meridian — Global News, Technology, AI & World Affairs</title>
+    <meta name="description" content="Independent global journalism delivering rigorous reporting and timely analysis on artificial intelligence, science, business, technology, gaming, and world affairs." />
+    
+    <!-- OpenGraph Metadata -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="The Meridian" />
+    <meta property="og:title" content="The Meridian — Global News, Technology, AI & World Affairs" />
+    <meta property="og:description" content="Independent global journalism delivering rigorous reporting and timely analysis on artificial intelligence, science, business, technology, gaming, and world affairs." />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter Card Metadata -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@TheMeridianNews" />
+    <meta name="twitter:title" content="The Meridian — Global News, Technology, AI & World Affairs" />
+    <meta name="twitter:description" content="Independent global journalism delivering rigorous reporting and timely analysis on artificial intelligence, science, business, technology, gaming, and world affairs." />
+
+    <!-- Google Web Fonts: Newsreader (Editorial Serif) & Plus Jakarta Sans (Clean Modern Sans) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!-- Structured Data: NewsMediaOrganization & WebSite -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "NewsMediaOrganization",
+          "name": "The Meridian",
+          "url": "https://themeridian.news",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://themeridian.news/logo.png"
+          },
+          "publishingPrinciples": "https://themeridian.news/editorial-policy",
+          "correctionsPolicy": "https://themeridian.news/corrections",
+          "ethicsPolicy": "https://themeridian.news/ethics",
+          "diversityPolicy": "https://themeridian.news/diversity",
+          "masthead": "https://themeridian.news/masthead"
+        },
+        {
+          "@type": "WebSite",
+          "name": "The Meridian",
+          "url": "https://themeridian.news",
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": "https://themeridian.news/search?q={search_term_string}",
+            "query-input": "required name=search_term_string"
+          }
+        }
+      ]
+    }
+    </script>
+  </head>
+  <body class="bg-[#FAF9F6] text-[#141517] antialiased selection:bg-stone-200 selection:text-stone-900">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
