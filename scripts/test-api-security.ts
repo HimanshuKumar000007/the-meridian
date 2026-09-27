@@ -11,12 +11,12 @@ config({ path: '.env.local' });
 config({ path: '.env' });
 
 import orchestratorHandler from '../api/automation/orchestrator';
-import discoveryHandler from '../api/automation/discovery';
-import extractionHandler from '../api/automation/extraction';
-import validationHandler from '../api/automation/validation';
-import lifecycleHandler from '../api/automation/lifecycle';
-import publishingHandler from '../api/automation/publishing';
-import healthHandler from '../api/automation/health';
+import discoveryHandler from '../test/legacy_api/discovery';
+import extractionHandler from '../test/legacy_api/extraction';
+import validationHandler from '../test/legacy_api/validation';
+import lifecycleHandler from '../test/legacy_api/lifecycle';
+import publishingHandler from '../test/legacy_api/publishing';
+import healthHandler from '../test/legacy_api/health';
 
 function createMockReqRes(options: {
   headers?: Record<string, string>;

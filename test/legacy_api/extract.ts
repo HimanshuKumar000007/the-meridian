@@ -9,11 +9,11 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { ExtractionEngine } from '../src/services/extraction/ExtractionEngine';
-import { NvidiaClient } from '../src/services/extraction/NvidiaClient';
-import { MockExtractionProvider } from '../src/services/extraction/MockExtractionProvider';
-import { SupabaseExtractionRepository } from '../src/data/repositories/SupabaseExtractionRepository';
-import type { DiscoveryItem } from '../src/types/discovery';
+import { ExtractionEngine } from '../../src/services/extraction/ExtractionEngine';
+import { NvidiaClient } from '../../src/services/extraction/NvidiaClient';
+import { MockExtractionProvider } from '../../src/services/extraction/MockExtractionProvider';
+import { SupabaseExtractionRepository } from '../../src/data/repositories/SupabaseExtractionRepository';
+import type { DiscoveryItem } from '../../src/types/discovery';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {

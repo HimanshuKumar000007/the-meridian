@@ -9,10 +9,10 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { SupabasePublicationRepository } from '../src/data/repositories/SupabasePublicationRepository';
-import { PublicationEngine } from '../src/services/publishing/PublicationEngine';
-import { PublicationGateService } from '../src/services/publishing/PublicationGateService';
-import { PublicationPolicyService } from '../src/services/publishing/PublicationPolicyService';
+import { SupabasePublicationRepository } from '../../src/data/repositories/SupabasePublicationRepository';
+import { PublicationEngine } from '../../src/services/publishing/PublicationEngine';
+import { PublicationGateService } from '../../src/services/publishing/PublicationGateService';
+import { PublicationPolicyService } from '../../src/services/publishing/PublicationPolicyService';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://dzbggkymgdtsyvrvrrjw.supabase.co';
