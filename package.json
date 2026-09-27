@@ -12,7 +12,9 @@
     "discovery:run": "tsx scripts/run-discovery.ts",
     "discovery:test": "tsx test-source-discovery.ts",
     "extraction:run": "tsx scripts/run-extraction.ts",
-    "extraction:test": "tsx test-news-extraction.ts"
+    "extraction:test": "tsx test-news-extraction.ts",
+    "validation:run": "tsx scripts/run-validation.ts",
+    "validation:test": "tsx test-news-validation.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
