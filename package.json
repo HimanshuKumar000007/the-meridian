@@ -14,7 +14,9 @@
     "extraction:run": "tsx scripts/run-extraction.ts",
     "extraction:test": "tsx test-news-extraction.ts",
     "validation:run": "tsx scripts/run-validation.ts",
-    "validation:test": "tsx test-news-validation.ts"
+    "validation:test": "tsx test-news-validation.ts",
+    "lifecycle:run": "tsx scripts/run-lifecycle.ts",
+    "lifecycle:test": "tsx test-story-lifecycle.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

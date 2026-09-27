@@ -99,6 +99,7 @@ export interface StorySource {
   accessedAt?: string;
   author?: string;
   isPrimary?: boolean;
+  is_primary?: boolean;
   time?: string; // Display formatted time
   note?: string;
 }
@@ -114,6 +115,7 @@ export interface StoryUpdate {
   source?: string;
   sourceUrl?: string;
   isMajor?: boolean;
+  is_major?: boolean;
 }
 
 export interface StoryCorrection {
@@ -164,7 +166,7 @@ export interface NewsStory {
   subcategory?: string;
 
   // Editorial & Lifecycle Status
-  status?: StoryEditorialStatus;
+  status?: StoryStatus;
   lifecycleStatus?: StoryLifecycleStatus;
 
   author: StoryAuthor;
@@ -209,4 +211,17 @@ export interface NewsStory {
   isLive?: boolean;
   isBreaking?: boolean;
   rank?: number;
+
+  // Database-aligned & Lifecycle fields
+  cluster_id?: string;
+  content_version?: number;
+  summary_points?: string[];
+  published_at?: string;
+  updated_at?: string;
+  created_at?: string;
+  hero_image?: StoryHeroImage;
+  reading_time_minutes?: number;
 }
+
+export type Story = NewsStory;
+
