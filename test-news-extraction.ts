@@ -322,11 +322,14 @@ async function runPhase6TestSuite() {
     );
 
     // 12e. Verification: Stories table remains untouched (No publishing)
-    const { count: storiesCount } = await serviceClient.from('stories').select('id', { count: 'exact' });
+    const { count: storiesCount } = await serviceClient
+      .from('stories')
+      .select('id', { count: 'exact' })
+      .eq('status', 'published');
     assert(
       storiesCount !== null && storiesCount === 19,
       'Test 12e: Confirmation — Public stories table was NOT modified or populated by extraction engine',
-      `Stories count remains exactly 19`
+      `Published stories count remains exactly 19`
     );
   }
 

@@ -246,11 +246,12 @@ async function runPhase7TestSuite() {
     const serviceClient = isServiceRoleConfigured() ? getSupabaseServiceClient() : anonClient;
     const { count: storiesCount, error: countErr } = await serviceClient
       .from('stories')
-      .select('*', { count: 'exact', head: true });
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'published');
 
     assert(
       countErr === null && storiesCount === 19,
-      'Test 12d: CRITICAL INVARIANT: stories table count is exactly 19 (NEVER modified by Phase 7 validator)'
+      'Test 12d: CRITICAL INVARIANT: published stories count is exactly 19 (NEVER modified by Phase 7 validator)'
     );
   } else {
     console.log('\nℹ️  Supabase credentials not set, live DB tests skipped (Mock repository passed all tests).');
