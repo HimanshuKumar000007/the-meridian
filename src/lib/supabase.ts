@@ -46,12 +46,13 @@ if (isSupabaseConfigured()) {
     },
   });
 } else {
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV) {
-    console.warn(
-      '[The Meridian] Supabase environment variables missing. ' +
-      'Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are defined in .env.local.'
-    );
-  }
+    const isDev = process.env.NODE_ENV === 'development';
+    if (isDev) {
+      console.warn(
+        '[The Meridian] Supabase environment variables missing. ' +
+        'Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are defined in .env.local.'
+      );
+    }
 }
 
 export const supabase = client;
