@@ -10,6 +10,13 @@
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createClient } from '@supabase/supabase-js';
+import { PipelineOrchestrator } from '../../src/services/automation/PipelineOrchestrator';
+import { StageRunnerService } from '../../src/services/automation/StageRunnerService';
+import { SupabaseAutomationRepository } from '../../src/data/repositories/SupabaseAutomationRepository';
+import { AutomationConfigService } from '../../src/services/automation/AutomationConfigService';
+import { MonitoringService } from '../../src/services/monitoring/MonitoringService';
+import type { AutomationStage, AutomationTrigger } from '../../src/types/automation';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -52,22 +59,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://dzbggkymgdtsyvrvrrjw.supabase.co';
     if (!serviceRoleKey) {
-      const availableKeys = Object.keys(process.env).filter((k) =>
-        k.toUpperCase().includes('SUPABASE') || k.toUpperCase().includes('SECRET') || k.toUpperCase().includes('KEY')
-      );
       return res.status(500).json({
         error: 'Server Configuration Error: Missing SUPABASE_SERVICE_ROLE_KEY.',
-        availableKeys,
       });
     }
-
-    // Dynamically load dependencies inside try-catch to guarantee structured error reporting
-    const { createClient } = await import('@supabase/supabase-js');
-    const { PipelineOrchestrator } = await import('../../src/services/automation/PipelineOrchestrator');
-    const { StageRunnerService } = await import('../../src/services/automation/StageRunnerService');
-    const { SupabaseAutomationRepository } = await import('../../src/data/repositories/SupabaseAutomationRepository');
-    const { AutomationConfigService } = await import('../../src/services/automation/AutomationConfigService');
-    const { MonitoringService } = await import('../../src/services/monitoring/MonitoringService');
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false },
@@ -81,8 +76,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const isVercelCron = Boolean(req.headers['user-agent']?.includes('vercel-cron'));
-    const bodyTrigger = req.body?.trigger;
-    const trigger = isVercelCron ? 'cron' : bodyTrigger || 'api';
+    const bodyTrigger = req.body?.trigger as AutomationTrigger | undefined;
+    const trigger: AutomationTrigger = isVercelCron ? 'cron' : bodyTrigger || 'api';
 
     const {
       dryRun = false,
@@ -92,9 +87,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } = req.body || {};
 
     const validatedStages = Array.isArray(stages)
-      ? stages.filter((s: string) =>
+      ? (stages.filter((s: string) =>
           ['discovery', 'extraction', 'validation', 'lifecycle', 'publishing'].includes(s)
-        )
+        ) as AutomationStage[])
       : undefined;
 
     const monitoringService = new MonitoringService({ client: supabase });
