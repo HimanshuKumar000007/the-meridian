@@ -16,7 +16,9 @@
     "validation:run": "tsx scripts/run-validation.ts",
     "validation:test": "tsx test-news-validation.ts",
     "lifecycle:run": "tsx scripts/run-lifecycle.ts",
-    "lifecycle:test": "tsx test-story-lifecycle.ts"
+    "lifecycle:test": "tsx test-story-lifecycle.ts",
+    "publishing:run": "tsx scripts/run-publishing.ts",
+    "publishing:test": "tsx test-publishing.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

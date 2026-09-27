@@ -20,6 +20,8 @@ export type StoryEditorialStatus =
  */
 export type StoryLifecycleStatus =
   | 'draft'
+  | 'ready'
+  | 'held'
   | 'published'
   | 'developing'
   | 'updated'
@@ -215,6 +217,8 @@ export interface NewsStory {
   // Database-aligned & Lifecycle fields
   cluster_id?: string;
   content_version?: number;
+  published_version?: number;
+  publishedVersion?: number;
   summary_points?: string[];
   published_at?: string;
   updated_at?: string;
