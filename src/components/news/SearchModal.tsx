@@ -12,6 +12,7 @@ interface SearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectStory?: (story: Story) => void;
+  onNavigateToSearch?: (query: string) => void;
 }
 
 const POPULAR_TOPICS = [
@@ -24,7 +25,12 @@ const POPULAR_TOPICS = [
   'Robotics',
 ];
 
-export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onSelectStory }) => {
+export const SearchModal: React.FC<SearchModalProps> = ({
+  isOpen,
+  onClose,
+  onSelectStory,
+  onNavigateToSearch,
+}) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Story[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -73,6 +79,31 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onSel
     };
   }, [query]);
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (query.trim()) {
+        onClose();
+        if (onNavigateToSearch) {
+          onNavigateToSearch(query.trim());
+        } else {
+          window.location.href = `/search?q=${encodeURIComponent(query.trim())}`;
+        }
+      }
+    }
+  };
+
+  const handleFullSearch = () => {
+    if (query.trim()) {
+      onClose();
+      if (onNavigateToSearch) {
+        onNavigateToSearch(query.trim());
+      } else {
+        window.location.href = `/search?q=${encodeURIComponent(query.trim())}`;
+      }
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -95,7 +126,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onSel
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search news, topics, companies, reporters..."
+            onKeyDown={handleKeyDown}
+            placeholder="Search news, topics, companies, reporters... (Press Enter for full search)"
             className="w-full bg-transparent text-lg sm:text-xl font-serif text-stone-900 placeholder:text-stone-400 placeholder:font-sans focus:outline-none"
           />
           {query && (
@@ -130,7 +162,10 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onSel
                   <button
                     key={topic}
                     type="button"
-                    onClick={() => setQuery(topic)}
+                    onClick={() => {
+                      setQuery(topic);
+                      handleFullSearch();
+                    }}
                     className="px-3 py-1.5 text-xs font-sans font-medium text-stone-700 bg-white border border-stone-200 hover:border-stone-900 hover:text-stone-900 transition-colors"
                   >
                     {topic}
@@ -140,15 +175,23 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onSel
 
               <div className="text-xs text-stone-400 font-sans flex items-center gap-1.5 pt-4 border-t border-hairline-subtle">
                 <CornerDownLeft className="w-3.5 h-3.5" />
-                <span>Type keywords to search across current global reports and analysis</span>
+                <span>Type keywords and press Enter to search full archive</span>
               </div>
             </div>
           ) : results.length > 0 ? (
             <div className="space-y-4">
-              <div className="text-xs font-semibold uppercase tracking-wider text-stone-500 font-sans mb-2">
-                Found {results.length} {results.length === 1 ? 'Report' : 'Reports'}
+              <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-stone-500 font-sans mb-2">
+                <span>Found {results.length} Quick {results.length === 1 ? 'Match' : 'Matches'}</span>
+                <button
+                  type="button"
+                  onClick={handleFullSearch}
+                  className="text-stone-900 hover:text-red-900 flex items-center gap-1 transition-colors"
+                >
+                  <span>Open Full Search Page</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
               </div>
-              {results.map((story) => (
+              {results.slice(0, 5).map((story) => (
                 <button
                   key={story.id}
                   type="button"
@@ -171,15 +214,32 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onSel
                   </p>
                 </button>
               ))}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleFullSearch}
+                  className="w-full py-2.5 px-4 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-sans font-semibold tracking-wider uppercase flex items-center justify-center gap-2 transition-colors"
+                >
+                  <span>See all results for &ldquo;{query}&rdquo;</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           ) : (
             <div className="py-12 text-center">
               <p className="font-serif text-lg text-stone-800 mb-1">
                 No matching reports found for &ldquo;{query}&rdquo;
               </p>
-              <p className="text-xs text-stone-500 font-sans max-w-sm mx-auto">
+              <p className="text-xs text-stone-500 font-sans max-w-sm mx-auto mb-4">
                 Try searching for broader keywords such as &ldquo;technology&rdquo;, &ldquo;quantum&rdquo;, or &ldquo;space&rdquo;.
               </p>
+              <button
+                type="button"
+                onClick={handleFullSearch}
+                className="px-4 py-2 border border-stone-300 text-xs font-semibold uppercase tracking-wider text-stone-700 hover:border-stone-900 transition-colors"
+              >
+                Search Full Archive
+              </button>
             </div>
           )}
         </div>
@@ -189,8 +249,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onSel
           <span>The Meridian Index</span>
           <div className="flex items-center gap-1">
             <span>Press</span>
-            <kbd className="px-1.5 py-0.5 bg-white border border-stone-300 text-[10px] font-mono">ESC</kbd>
-            <span>to dismiss</span>
+            <kbd className="px-1.5 py-0.5 bg-white border border-stone-300 text-[10px] font-mono">ENTER</kbd>
+            <span>for full search</span>
           </div>
         </div>
       </div>

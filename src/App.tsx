@@ -24,6 +24,7 @@ import { StoryLoading } from './components/news/StoryLoading';
 import { HomepageLoading } from './components/news/HomepageLoading';
 import { CategoryPage } from './components/news/CategoryPage';
 import { CategoryError } from './components/news/CategoryError';
+import { SearchPage } from './components/news/SearchPage';
 import type { HomepageData } from './types/repository';
 
 interface StoryRouteProps {
@@ -119,6 +120,7 @@ type RouteState =
   | { type: 'home' }
   | { type: 'story'; slug: string }
   | { type: 'category'; categorySlug: string; subcategorySlug: string }
+  | { type: 'search'; query: string; category?: string }
   | { type: 'not-found'; path: string };
 
 function parseCurrentRoute(): RouteState {
@@ -130,7 +132,15 @@ function parseCurrentRoute(): RouteState {
     return { type: 'home' };
   }
 
-  // 1. Story route: /story/[slug]
+  // 1. Search route: /search?q=...
+  if (parts[0] === 'search') {
+    const searchParams = new URLSearchParams(window.location.search);
+    const q = searchParams.get('q') || '';
+    const cat = searchParams.get('category') || undefined;
+    return { type: 'search', query: q, category: cat };
+  }
+
+  // 2. Story route: /story/[slug]
   if (parts[0] === 'story') {
     if (parts[1]) {
       return { type: 'story', slug: parts[1] };
@@ -138,7 +148,7 @@ function parseCurrentRoute(): RouteState {
     return { type: 'not-found', path: pathname };
   }
 
-  // 2. Category route: /[category] or /[category]/[subcategory]
+  // 3. Category route: /[category] or /[category]/[subcategory]
   const categorySlug = parts[0];
   const subcategorySlug = parts[1] || 'all';
 
@@ -212,6 +222,18 @@ export default function App() {
     } as RouteState);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [navigateToHome]);
+
+  const navigateToSearch = useCallback((query: string, category?: string) => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (category && category !== 'all') params.set('category', category);
+    const queryString = params.toString();
+    const targetPath = queryString ? `/search?${queryString}` : '/search';
+
+    window.history.pushState(null, '', targetPath);
+    setRoute({ type: 'search', query, category });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
 
   const handleSelectStory = useCallback((story: Story | NewsStory) => {
     navigateToStory(story.slug);
@@ -446,6 +468,17 @@ export default function App() {
               />
             );
           })()
+        ) : route.type === 'search' ? (
+          // ================= UNIVERSAL SEARCH PAGE ROUTE (/search?q=...) =================
+          <SearchPage
+            initialQuery={route.query}
+            initialCategory={route.category}
+            onNavigateHome={navigateToHome}
+            onSelectCategory={navigateToCategory}
+            onSelectStory={handleSelectStory}
+            onOpenSearchModal={() => setIsSearchOpen(true)}
+            trendingItems={trendingHeadlines}
+          />
         ) : route.type === 'story' ? (
           // ================= UNIVERSAL STORY PAGE ROUTE (/story/[slug]) =================
           <StoryRoute
@@ -483,6 +516,10 @@ export default function App() {
         onSelectStory={(story) => {
           setIsSearchOpen(false);
           handleSelectStory(story);
+        }}
+        onNavigateToSearch={(q) => {
+          setIsSearchOpen(false);
+          navigateToSearch(q);
         }}
       />
 

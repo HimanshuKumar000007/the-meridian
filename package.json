@@ -20,7 +20,8 @@
     "publishing:run": "tsx scripts/run-publishing.ts",
     "publishing:test": "tsx test-publishing.ts",
     "automation:run": "tsx scripts/run-automation.ts",
-    "automation:test": "tsx test-automation.ts"
+    "automation:test": "tsx test-automation.ts",
+    "search:test": "tsx test-search-trending.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

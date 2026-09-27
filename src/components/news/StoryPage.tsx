@@ -141,6 +141,25 @@ export const StoryPage: React.FC<StoryPageProps> = ({
     };
   }, [story]);
 
+  // Phase 11: Privacy-preserving, deduplicated view counting
+  useEffect(() => {
+    if (!story?.id) return;
+    try {
+      let sessionHash = sessionStorage.getItem('meridian_anon_sess') || '';
+      if (!sessionHash) {
+        sessionHash = 'sess_' + Math.random().toString(36).substring(2, 15) + '_' + Date.now().toString(36);
+        sessionStorage.setItem('meridian_anon_sess', sessionHash);
+      }
+      fetch('/api/story/view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storyId: story.id, sessionHash }),
+      }).catch(() => {});
+    } catch {
+      // Ignore browser environment errors silently
+    }
+  }, [story?.id]);
+
   // Compute related stories (excluding current story)
   const relatedStories = useMemo(() => {
     if (story.relatedSlugs && story.relatedSlugs.length > 0) {
