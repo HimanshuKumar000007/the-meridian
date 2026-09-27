@@ -22,6 +22,8 @@ jobs:
             EXTRA_HEADERS+=(-H "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}")
           fi
 
+          echo "Probing /api/automation/health..."
+          curl -s -i "${EXTRA_HEADERS[@]}" -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" https://the-meridian-aptionaiged-4225.vercel.app/api/automation/health
 
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             --max-time 60 \
