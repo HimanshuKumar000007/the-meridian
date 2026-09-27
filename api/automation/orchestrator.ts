@@ -19,27 +19,26 @@ import { MonitoringService } from '../../src/services/monitoring/MonitoringServi
 import type { AutomationStage, AutomationTrigger } from '../../src/types/automation';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const configService = new AutomationConfigService();
-  const authHeader = req.headers['authorization'] as string | undefined;
-  const customHeader = (req.headers['x-cron-secret'] || req.headers['x-admin-secret']) as string | undefined;
-
-  // 1. Strict Server Authentication
-  if (!configService.verifyAuthHeader(authHeader, customHeader)) {
-    return res.status(401).json({
-      error: 'Unauthorized: Valid automation credentials required to invoke the orchestrator.',
-    });
-  }
-
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://dzbggkymgdtsyvrvrrjw.supabase.co';
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!serviceRoleKey) {
-    return res.status(500).json({
-      error: 'Server Configuration Error: Missing SUPABASE_SERVICE_ROLE_KEY.',
-    });
-  }
-
   try {
+    const configService = new AutomationConfigService();
+    const authHeader = req.headers['authorization'] as string | undefined;
+    const customHeader = (req.headers['x-cron-secret'] || req.headers['x-admin-secret']) as string | undefined;
+
+    // 1. Strict Server Authentication
+    if (!configService.verifyAuthHeader(authHeader, customHeader)) {
+      return res.status(401).json({
+        error: 'Unauthorized: Valid automation credentials required to invoke the orchestrator.',
+      });
+    }
+
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://dzbggkymgdtsyvrvrrjw.supabase.co';
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!serviceRoleKey) {
+      return res.status(500).json({
+        error: 'Server Configuration Error: Missing SUPABASE_SERVICE_ROLE_KEY.',
+      });
+    }
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false },
     });
