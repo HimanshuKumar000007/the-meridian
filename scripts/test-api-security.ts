@@ -88,8 +88,9 @@ async function main() {
     console.log(`✅ [PASS] ${h.name}: Invalid token rejected with 401 Unauthorized`);
 
     // 3. Valid Secret in Dry Run
+    const validSecret = process.env.AUTOMATION_CRON_SECRET || process.env.CRON_SECRET;
     const goodAuth = createMockReqRes({
-      headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+      headers: { authorization: `Bearer ${validSecret}` },
       body: { dryRun: true },
     });
     await h.fn(goodAuth.req, goodAuth.res);
@@ -101,7 +102,7 @@ async function main() {
     }
 
     // Verify secret is NOT leaked in response
-    if (bodyStr.includes(process.env.CRON_SECRET)) {
+    if (validSecret && bodyStr.includes(validSecret)) {
       throw new Error(`Data Leak: ${h.name} leaked secret in response body!`);
     }
     console.log(`✅ [PASS] ${h.name}: Authorized server request accepted (Status: ${status}) with zero secret leakage`);

@@ -11,12 +11,12 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { PipelineOrchestrator } from '../../src/services/automation/PipelineOrchestrator';
-import { StageRunnerService } from '../../src/services/automation/StageRunnerService';
-import { SupabaseAutomationRepository } from '../../src/data/repositories/SupabaseAutomationRepository';
-import { AutomationConfigService } from '../../src/services/automation/AutomationConfigService';
-import { MonitoringService } from '../../src/services/monitoring/MonitoringService';
-import type { AutomationStage, AutomationTrigger } from '../../src/types/automation';
+import { PipelineOrchestrator } from '../services/automation/PipelineOrchestrator';
+import { StageRunnerService } from '../services/automation/StageRunnerService';
+import { SupabaseAutomationRepository } from '../data/repositories/SupabaseAutomationRepository';
+import { AutomationConfigService } from '../services/automation/AutomationConfigService';
+import { MonitoringService } from '../services/monitoring/MonitoringService';
+import type { AutomationStage, AutomationTrigger } from '../types/automation';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
