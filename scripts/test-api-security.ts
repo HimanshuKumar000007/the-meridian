@@ -16,7 +16,7 @@ import extractionHandler from '../test/legacy_api/extraction';
 import validationHandler from '../test/legacy_api/validation';
 import lifecycleHandler from '../test/legacy_api/lifecycle';
 import publishingHandler from '../test/legacy_api/publishing';
-import healthHandler from '../test/legacy_api/health';
+import healthHandler from '../api/automation/health';
 
 function createMockReqRes(options: {
   headers?: Record<string, string>;
