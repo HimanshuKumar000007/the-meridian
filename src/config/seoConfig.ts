@@ -8,10 +8,16 @@
 
 export function getSiteUrl(): string {
   let url = '';
-  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SITE_URL) {
-    url = import.meta.env.VITE_SITE_URL;
-  } else if (typeof process !== 'undefined' && process.env) {
+  if (typeof process !== 'undefined' && process.env) {
     url = process.env.VITE_SITE_URL || process.env.SITE_URL || '';
+  }
+  if (!url) {
+    try {
+      const meta = new Function('return import.meta')();
+      if (meta && meta.env && meta.env.VITE_SITE_URL) {
+        url = meta.env.VITE_SITE_URL;
+      }
+    } catch {}
   }
 
   if (!url || url.trim() === '') {

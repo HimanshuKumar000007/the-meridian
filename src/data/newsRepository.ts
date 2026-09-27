@@ -8,10 +8,18 @@ import { SupabaseNewsRepository } from './repositories/SupabaseNewsRepository';
 import { MockNewsRepository } from './repositories/MockNewsRepository';
 import type { NewsRepository } from '../types/repository';
 
-// Explicit mock toggle via environment variable
-const isExplicitMock =
-  typeof import.meta !== 'undefined' &&
-  import.meta.env?.VITE_USE_MOCK_DATA === 'true';
+function checkExplicitMock(): boolean {
+  if (typeof process !== 'undefined' && process.env && process.env.VITE_USE_MOCK_DATA === 'true') {
+    return true;
+  }
+  try {
+    const meta = new Function('return import.meta')();
+    return meta?.env?.VITE_USE_MOCK_DATA === 'true';
+  } catch {}
+  return false;
+}
+
+const isExplicitMock = checkExplicitMock();
 
 let activeRepository: SupabaseNewsRepository | MockNewsRepository;
 
