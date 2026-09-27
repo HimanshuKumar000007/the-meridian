@@ -1,11 +1,6 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- *
- * THE MERIDIAN — PHASE 5 AUTOMATED VERIFICATION SUITE
- * Universal News Source Discovery Engine
- */
-
+import dotenv from 'dotenv';
+dotenv.config();
+dotenv.config({ path: '.env.local', override: true });
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -24,7 +19,7 @@ import {
   type NewsSource,
   type SourceFetchResult,
 } from './src/services/discovery';
-import { getSupabaseClient, isSupabaseConfigured } from './src/lib/supabase';
+import { getSupabaseClient, getSupabaseServiceClient, isSupabaseConfigured, isServiceRoleConfigured } from './src/lib/supabase';
 
 function loadFixture(filename: string): string {
   const filePath = path.resolve('test/fixtures', filename);
@@ -309,18 +304,19 @@ async function runPhase5TestSuite() {
   );
 
   // ----------------------------------------------------
-  // TEST 17: Live Database Integration & RLS Verification (Supabase)
+  // ----------------------------------------------------
+  // TEST 17: Live Database Integration & Secure Server Access (Supabase)
   // ----------------------------------------------------
   if (isSupabaseConfigured()) {
-    console.log('\n--- Live Supabase Integration Verification ---');
-    const supabaseClient = getSupabaseClient();
-    const supabaseRepo = new SupabaseDiscoveryRepository(supabaseClient);
+    console.log('\n--- Live Supabase Integration & Security Verification ---');
+    const serverClient = isServiceRoleConfigured() ? getSupabaseServiceClient() : getSupabaseClient();
+    const supabaseRepo = new SupabaseDiscoveryRepository(serverClient);
 
-    // 17a. Source Seeding & Retrieval
+    // 17a. Source Seeding & Retrieval with server client
     const liveSources = await supabaseRepo.getSources();
     assert(
       liveSources.length >= INITIAL_NEWS_SOURCES.length,
-      'Test 17a: Live Supabase news_sources loaded and seeded with initial catalog',
+      'Test 17a: Live Supabase news_sources loaded and accessible via secure server client',
       `Found ${liveSources.length} sources`
     );
 
@@ -329,7 +325,7 @@ async function runPhase5TestSuite() {
     const saveRes = await supabaseRepo.saveDiscoveryItems([testDiscoveryItem]);
     assert(
       saveRes.inserted + saveRes.updated + saveRes.noop > 0,
-      'Test 17b: Discovery candidate successfully persisted to news_discovery_items table'
+      'Test 17b: Discovery candidate successfully persisted via secure server worker'
     );
 
     // 17c. Query by Fingerprint
@@ -347,21 +343,74 @@ async function runPhase5TestSuite() {
       'Test 17d: Discovery run record successfully persisted to discovery_runs table in Supabase'
     );
 
-    // 17e. RLS Security Check: Verify public/anonymous cannot insert unauthorized items into editorial tables
-    const { error: insertError } = await supabaseClient
-      .from('stories')
-      .insert({
-        id: 'unauthorized-test-id',
-        slug: 'unauthorized-test-slug',
-        title: 'Unauthorized Public Injection Attempt',
-        excerpt: 'Test',
-        content: 'Test',
-        category_id: 'technology',
-      });
+    // ----------------------------------------------------
+    // TEST 18: Anonymous Client Security Hardening Verification
+    // ----------------------------------------------------
+    console.log('\n--- Anonymous Client Hardening Verification ---');
+    const anonClient = getSupabaseClient();
 
+    // 18a. Anonymous SELECT on news_sources is DENIED
+    const { error: anonSelectSourcesError } = await anonClient.from('news_sources').select('*').limit(1);
     assert(
-      Boolean(insertError),
-      'Test 17e: RLS Protection validated — Direct public injection into editorial tables is rejected by database policy'
+      Boolean(anonSelectSourcesError),
+      'Test 18a: Anonymous SELECT on news_sources is strictly DENIED'
+    );
+
+    // 18b. Anonymous SELECT on news_discovery_items is DENIED
+    const { error: anonSelectDiscoveryError } = await anonClient.from('news_discovery_items').select('*').limit(1);
+    assert(
+      Boolean(anonSelectDiscoveryError),
+      'Test 18b: Anonymous SELECT on news_discovery_items is strictly DENIED'
+    );
+
+    // 18c. Anonymous SELECT on discovery_runs is DENIED
+    const { error: anonSelectRunsError } = await anonClient.from('discovery_runs').select('*').limit(1);
+    assert(
+      Boolean(anonSelectRunsError),
+      'Test 18c: Anonymous SELECT on discovery_runs is strictly DENIED'
+    );
+
+    // 18d. Anonymous INSERT on news_discovery_items is DENIED
+    const { error: anonInsertError } = await anonClient.from('news_discovery_items').insert({
+      id: 'malicious-anon-id',
+      source_id: liveSources[0].id,
+      fingerprint: 'malicious-anon-fp',
+      canonical_url: 'https://evil.example.com',
+      title: 'Malicious Public Injection Attempt',
+      content_hash: '9999',
+      status: 'new',
+    });
+    assert(
+      Boolean(anonInsertError),
+      'Test 18d: Anonymous INSERT on news_discovery_items is strictly DENIED'
+    );
+
+    // 18e. Anonymous UPDATE on news_sources is DENIED
+    const { error: anonUpdateError } = await anonClient.from('news_sources').update({ name: 'Hacked' }).eq('id', liveSources[0].id);
+    assert(
+      Boolean(anonUpdateError),
+      'Test 18e: Anonymous UPDATE on news_sources is strictly DENIED'
+    );
+
+    // 18f. Anonymous DELETE on discovery_runs is DENIED
+    const { error: anonDeleteError } = await anonClient.from('discovery_runs').delete().neq('id', 'safe');
+    assert(
+      Boolean(anonDeleteError),
+      'Test 18f: Anonymous DELETE on discovery_runs is strictly DENIED'
+    );
+
+    // 18g. Anonymous INSERT on published stories table is DENIED
+    const { error: anonStoryInsertError } = await anonClient.from('stories').insert({
+      id: 'unauthorized-story-id',
+      slug: 'unauthorized-story',
+      title: 'Unauthorized Public Injection Attempt',
+      excerpt: 'Test',
+      content: 'Test',
+      category_id: 'technology',
+    });
+    assert(
+      Boolean(anonStoryInsertError),
+      'Test 18g: Anonymous direct INSERT into editorial stories table is strictly DENIED'
     );
   }
 

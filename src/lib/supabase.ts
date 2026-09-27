@@ -62,3 +62,43 @@ export function getSupabaseClient(): SupabaseClient {
   }
   return client;
 }
+
+let serviceRoleClient: SupabaseClient | null = null;
+
+export function isServiceRoleConfigured(): boolean {
+  if (typeof window !== 'undefined') return false;
+  const key = typeof process !== 'undefined' && process.env ? process.env.SUPABASE_SERVICE_ROLE_KEY : undefined;
+  return Boolean(key && key.trim() !== '');
+}
+
+/**
+ * Server-Side Administrative Supabase Client.
+ * Uses SUPABASE_SERVICE_ROLE_KEY to perform privileged operations (e.g. discovery worker).
+ * STRICT SAFEGUARD: Throws error immediately if called in a browser runtime.
+ */
+export function getSupabaseServiceClient(): SupabaseClient {
+  if (typeof window !== 'undefined') {
+    throw new Error('[The Meridian Security Error] getSupabaseServiceClient cannot be called from browser environments.');
+  }
+
+  if (serviceRoleClient) {
+    return serviceRoleClient;
+  }
+
+  const serviceRoleKey = typeof process !== 'undefined' && process.env ? process.env.SUPABASE_SERVICE_ROLE_KEY : undefined;
+  if (!serviceRoleKey || serviceRoleKey.trim() === '') {
+    throw new Error(
+      '[The Meridian Security] Missing SUPABASE_SERVICE_ROLE_KEY environment variable. Privileged server-side access required.'
+    );
+  }
+
+  serviceRoleClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+
+  return serviceRoleClient;
+}
+

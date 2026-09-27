@@ -40,7 +40,7 @@ export const INITIAL_NEWS_SOURCES: NewsSource[] = [
     priority: 1,
     pollIntervalMinutes: 15,
     categories: ['ai', 'technology'],
-    isActive: true,
+    isActive: false, // Inactive: Anthropic does not maintain a public RSS endpoint (returns 404)
     consecutiveFailures: 0,
   },
   {
@@ -67,7 +67,7 @@ export const INITIAL_NEWS_SOURCES: NewsSource[] = [
     slug: 'ars-technica',
     name: 'Ars Technica — Technology Lab',
     type: 'rss',
-    feedUrl: 'https://feeds.arstechnica.com/arstechnica/technologylab',
+    feedUrl: 'https://feeds.arstechnica.com/arstechnica/index',
     baseUrl: 'https://arstechnica.com',
     country: 'US',
     language: 'en',
@@ -210,7 +210,7 @@ export const INITIAL_NEWS_SOURCES: NewsSource[] = [
     priority: 2,
     pollIntervalMinutes: 20,
     categories: ['business'],
-    isActive: true,
+    isActive: false, // Inactive: CNBC endpoint stalls/throttles response body exceeding timeouts
     consecutiveFailures: 0,
   },
 

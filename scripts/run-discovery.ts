@@ -3,11 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config();
+dotenv.config({ path: '.env.local', override: true });
 import { DiscoveryRunner } from '../src/services/discovery/DiscoveryRunner';
 import { SupabaseDiscoveryRepository } from '../src/data/repositories/SupabaseDiscoveryRepository';
 import { MockDiscoveryRepository } from '../src/data/repositories/MockDiscoveryRepository';
-import { isSupabaseConfigured, getSupabaseClient } from '../src/lib/supabase';
+import { isSupabaseConfigured, isServiceRoleConfigured, getSupabaseServiceClient, getSupabaseClient } from '../src/lib/supabase';
 import { INITIAL_NEWS_SOURCES } from '../src/data/sources/initialSources';
 import { DiscoveryRepository } from '../src/data/repositories/DiscoveryRepository';
 
@@ -19,8 +21,8 @@ async function main() {
   let repo: DiscoveryRepository;
 
   if (isSupabaseConfigured()) {
-    console.log('[Runner] Connecting to live Supabase repository...');
-    const client = getSupabaseClient();
+    console.log('[Runner] Connecting to live Supabase repository with secure service credentials...');
+    const client = isServiceRoleConfigured() ? getSupabaseServiceClient() : getSupabaseClient();
     repo = new SupabaseDiscoveryRepository(client);
   } else {
     console.log('[Runner] Supabase not configured; using In-Memory Mock repository...');
