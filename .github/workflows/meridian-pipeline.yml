@@ -22,6 +22,12 @@ jobs:
             EXTRA_HEADERS+=(-H "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}")
           fi
 
+          echo "Probing /api/robots..."
+          curl -s -i "${EXTRA_HEADERS[@]}" https://the-meridian-aptionaiged-4225.vercel.app/api/robots | head -n 12
+
+          echo "Probing /api/search..."
+          curl -s -i "${EXTRA_HEADERS[@]}" "https://the-meridian-aptionaiged-4225.vercel.app/api/search?q=nvidia" | head -n 12
+
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             --max-time 60 \
             --retry 1 \
