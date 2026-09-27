@@ -3,15 +3,41 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { isSupabaseConfigured } from '../lib/supabase';
+import { SupabaseNewsRepository } from './repositories/SupabaseNewsRepository';
 import { MockNewsRepository } from './repositories/MockNewsRepository';
 import type { NewsRepository } from '../types/repository';
 
+// Explicit mock toggle via environment variable
+const isExplicitMock =
+  typeof import.meta !== 'undefined' &&
+  import.meta.env?.VITE_USE_MOCK_DATA === 'true';
+
+let activeRepository: SupabaseNewsRepository | MockNewsRepository;
+
+if (isSupabaseConfigured() && !isExplicitMock) {
+  try {
+    activeRepository = new SupabaseNewsRepository();
+  } catch (err) {
+    console.warn('[newsRepository] Fallback to MockNewsRepository due to initialization failure:', err);
+    activeRepository = new MockNewsRepository();
+  }
+} else {
+  activeRepository = new MockNewsRepository();
+}
+
+export const newsRepository = activeRepository;
+
 /**
- * Universal News Repository Singleton.
- * In Phase 4, backed by MockNewsRepository.
- * In Phase 5, can be swapped with a real database repository without modifying frontend consumers.
+ * Hot-swap or override repository provider (useful for testing or manual toggle)
  */
-export const newsRepository: MockNewsRepository = new MockNewsRepository();
+export function setRepositoryProvider(repo: SupabaseNewsRepository | MockNewsRepository): void {
+  activeRepository = repo;
+}
+
+export function isUsingSupabase(): boolean {
+  return activeRepository instanceof SupabaseNewsRepository;
+}
 
 export default newsRepository;
 export type { NewsRepository };

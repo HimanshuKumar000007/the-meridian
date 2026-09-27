@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import type { NewsCategory, CategorySortMode } from '../../types/category';
+import React, { useState, useEffect } from 'react';
+import type { NewsCategory, CategorySortMode, CategoryPageData } from '../../types/category';
 import type { Story } from '../../data/mockNews';
-import { getStoriesByCategory, getFeaturedStoriesByCategory, getTrendingStoriesByCategory, getMostReadStoriesByCategory } from '../../data/categoryDatabase';
+import { newsRepository } from '../../data/newsRepository';
 import { CategoryBreadcrumb } from './CategoryBreadcrumb';
 import { CategoryHero } from './CategoryHero';
 import { CategoryTabs } from './CategoryTabs';
@@ -15,6 +15,7 @@ import { CategoryStoryList } from './CategoryStoryList';
 import { CategoryTrending } from './CategoryTrending';
 import { CategoryMostRead } from './CategoryMostRead';
 import { CategoryEmpty } from './CategoryEmpty';
+import { CategoryLoading } from './CategoryLoading';
 
 interface CategoryPageProps {
   category: NewsCategory;
@@ -117,36 +118,55 @@ export const CategoryPage: React.FC<CategoryPageProps> = ({
     };
   }, [category]);
 
-  // Query category datasets
-  const allCategoryStories = useMemo(() => {
-    return getStoriesByCategory(category.slug, {
-      subcategory: activeSubcategory,
-      sort: sortMode,
-    });
+  const [pageData, setPageData] = useState<CategoryPageData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load category page data via newsRepository
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      setIsLoading(true);
+      try {
+        const data = await newsRepository.getCategoryPageData(
+          category.slug,
+          activeSubcategory,
+          sortMode
+        );
+        if (isMounted) {
+          if (data) {
+            setPageData(data);
+          } else {
+            setPageData({
+              category,
+              activeSubcategory,
+              featuredStories: [],
+              latestStories: [],
+              trendingStories: [],
+              mostReadStories: [],
+              totalCount: 0,
+            });
+          }
+        }
+      } catch (err) {
+        console.error('[CategoryPage] Failed to load data from repository:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadData();
+    return () => {
+      isMounted = false;
+    };
   }, [category.slug, activeSubcategory, sortMode]);
 
-  // Featured stories
-  const featuredStories = useMemo(() => {
-    // Only show top featured section when viewing 'all' subcategory
-    if (activeSubcategory !== 'all') return [];
-    return getFeaturedStoriesByCategory(category.slug);
-  }, [category.slug, activeSubcategory]);
-
-  // Latest stories (excluding primary featured story from the feed to avoid visual duplication)
-  const feedStories = useMemo(() => {
-    if (activeSubcategory !== 'all') return allCategoryStories;
-    const leadId = featuredStories[0]?.id;
-    return allCategoryStories.filter((s) => s.id !== leadId);
-  }, [allCategoryStories, featuredStories, activeSubcategory]);
-
-  // Category trending & most read
-  const trendingStories = useMemo(() => {
-    return getTrendingStoriesByCategory(category.slug);
-  }, [category.slug]);
-
-  const mostReadStories = useMemo(() => {
-    return getMostReadStoriesByCategory(category.slug);
-  }, [category.slug]);
+  const featuredStories = pageData?.featuredStories || [];
+  const feedStories = pageData?.latestStories || [];
+  const trendingStories = pageData?.trendingStories || [];
+  const mostReadStories = pageData?.mostReadStories || [];
+  const totalCount = pageData?.totalCount ?? (featuredStories.length + feedStories.length);
 
   const handleSubcategoryChange = (subcatSlug: string) => {
     setActiveSubcategory(subcatSlug);
@@ -171,7 +191,7 @@ export const CategoryPage: React.FC<CategoryPageProps> = ({
         {/* 2. Category Hero Section */}
         <CategoryHero
           category={category}
-          storyCount={allCategoryStories.length}
+          storyCount={totalCount}
         />
 
         {/* 3. Subcategory Filter Tabs (Horizontally scrollable on mobile without whole-page overflow) */}
@@ -182,7 +202,9 @@ export const CategoryPage: React.FC<CategoryPageProps> = ({
         />
 
         {/* 4. Category Content */}
-        {allCategoryStories.length === 0 ? (
+        {isLoading && !pageData ? (
+          <CategoryLoading />
+        ) : totalCount === 0 ? (
           // Empty State
           <CategoryEmpty
             categoryName={category.name}

@@ -20,8 +20,100 @@ import { StoryDetailModal } from './components/news/StoryDetailModal';
 import { PolicyModal } from './components/news/PolicyModal';
 import { StoryPage } from './components/news/StoryPage';
 import { StoryNotFound } from './components/news/StoryNotFound';
+import { StoryLoading } from './components/news/StoryLoading';
+import { HomepageLoading } from './components/news/HomepageLoading';
 import { CategoryPage } from './components/news/CategoryPage';
 import { CategoryError } from './components/news/CategoryError';
+import type { HomepageData } from './types/repository';
+
+interface StoryRouteProps {
+  slug: string;
+  onNavigateHome: () => void;
+  onSelectCategory: (categorySlug: string, subcategorySlug?: string) => void;
+  onSelectStory: (story: Story | NewsStory) => void;
+  onOpenSearch: () => void;
+  suggestedStories: Story[];
+  allStories: Story[];
+}
+
+const StoryRoute: React.FC<StoryRouteProps> = ({
+  slug,
+  onNavigateHome,
+  onSelectCategory,
+  onSelectStory,
+  onOpenSearch,
+  suggestedStories,
+  allStories,
+}) => {
+  const [story, setStory] = useState<NewsStory | null>(() => {
+    try {
+      return newsRepository.getStoryBySlugSync?.(slug) || null;
+    } catch {
+      return null;
+    }
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(!story);
+  const [notFound, setNotFound] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadStory() {
+      setIsLoading(true);
+      setNotFound(false);
+      try {
+        const found = await newsRepository.getStoryBySlug(slug);
+        if (isMounted) {
+          if (found) {
+            setStory(found);
+          } else {
+            setStory(null);
+            setNotFound(true);
+          }
+        }
+      } catch (err) {
+        console.error('[StoryRoute] Error loading story from repository:', err);
+        if (isMounted) {
+          setNotFound(true);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadStory();
+    return () => {
+      isMounted = false;
+    };
+  }, [slug]);
+
+  if (isLoading && !story) {
+    return <StoryLoading />;
+  }
+
+  if (notFound || !story) {
+    return (
+      <StoryNotFound
+        slug={slug}
+        onNavigateHome={onNavigateHome}
+        onOpenSearch={onOpenSearch}
+        onSelectStory={onSelectStory}
+        suggestedStories={suggestedStories}
+      />
+    );
+  }
+
+  return (
+    <StoryPage
+      story={story}
+      allStories={allStories}
+      onNavigateHome={onNavigateHome}
+      onSelectCategory={onSelectCategory}
+      onSelectStory={onSelectStory}
+    />
+  );
+};
 
 type RouteState =
   | { type: 'home' }
@@ -146,19 +238,62 @@ export default function App() {
   }, [route]);
 
   // Homepage data queries via Universal NewsRepository
-  const homepageData = useMemo(() => newsRepository.getHomepageDataSync(), []);
-  const featuredStory = homepageData.featuredStory;
-  const latestNews = homepageData.latestStories;
-  const topStories = homepageData.topStories;
-  const mostReadStories = homepageData.mostReadStories;
-  const trendingHeadlines = useMemo(() => newsRepository.getTrendingHeadlinesSync(), []);
+  const [homepageData, setHomepageData] = useState<HomepageData | null>(() => {
+    try {
+      return newsRepository.getHomepageDataSync?.() || null;
+    } catch {
+      return null;
+    }
+  });
+  const [isHomepageLoading, setIsHomepageLoading] = useState<boolean>(!homepageData);
 
-  const aiTechStories = homepageData.aiTechStories;
-  const gamingStories = homepageData.gamingStories;
-  const scienceStories = homepageData.scienceStories;
-  const businessStories = homepageData.businessStories;
-  const worldStories = homepageData.worldStories;
-  const allStories = useMemo(() => newsRepository.getLatestStoriesSync(25), []);
+  useEffect(() => {
+    let isMounted = true;
+    async function loadHome() {
+      try {
+        const data = await newsRepository.getHomepageData();
+        if (isMounted) {
+          setHomepageData(data);
+        }
+      } catch (err) {
+        console.error('[App] Failed to load homepage data from repository:', err);
+      } finally {
+        if (isMounted) {
+          setIsHomepageLoading(false);
+        }
+      }
+    }
+
+    if (route.type === 'home') {
+      loadHome();
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [route.type]);
+
+  const featuredStory = homepageData?.featuredStory;
+  const latestNews = homepageData?.latestStories || [];
+  const topStories = homepageData?.topStories || [];
+  const mostReadStories = homepageData?.mostReadStories || [];
+  const trendingHeadlines = useMemo(() => {
+    if (homepageData?.trendingStories) {
+      return homepageData.trendingStories.map((s) => ({
+        id: s.id,
+        title: s.title,
+        category: s.category,
+        slug: s.slug,
+      }));
+    }
+    return newsRepository.getTrendingHeadlinesSync?.() || [];
+  }, [homepageData]);
+
+  const aiTechStories = homepageData?.aiTechStories || [];
+  const gamingStories = homepageData?.gamingStories || [];
+  const scienceStories = homepageData?.scienceStories || [];
+  const businessStories = homepageData?.businessStories || [];
+  const worldStories = homepageData?.worldStories || [];
+  const allStories = useMemo(() => newsRepository.getLatestStoriesSync?.(25) || [], []);
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-[#141517] flex flex-col font-sans selection:bg-stone-200 selection:text-stone-900">
@@ -202,81 +337,87 @@ export default function App() {
       <main className="flex-1 w-full" id="main-content">
         {route.type === 'home' ? (
           // ================= FRONT PAGE VIEW =================
-          <>
-            {/* HERO / LEAD NEWS AREA */}
-            <HeroSection
-              featuredStory={featuredStory}
-              latestStories={latestNews}
-              onSelectStory={handleSelectStory}
-            />
+          isHomepageLoading && !homepageData ? (
+            <HomepageLoading />
+          ) : featuredStory ? (
+            <>
+              {/* HERO / LEAD NEWS AREA */}
+              <HeroSection
+                featuredStory={featuredStory}
+                latestStories={latestNews}
+                onSelectStory={handleSelectStory}
+              />
 
-            {/* TOP STORIES (4-card desktop grid) */}
-            <TopStories
-              stories={topStories}
-              onSelectStory={handleSelectStory}
-            />
+              {/* TOP STORIES (4-card desktop grid) */}
+              <TopStories
+                stories={topStories}
+                onSelectStory={handleSelectStory}
+              />
 
-            {/* AI & TECHNOLOGY SECTION */}
-            <CategorySection
-              title="AI & Technology"
-              subtitle="Computation, frontier models, and semiconductor architecture"
-              categorySlug="ai"
-              stories={aiTechStories}
-              layoutType="ai-tech"
-              onSelectStory={handleSelectStory}
-              onViewCategory={(slug) => navigateToCategory(slug)}
-            />
+              {/* AI & TECHNOLOGY SECTION */}
+              <CategorySection
+                title="AI & Technology"
+                subtitle="Computation, frontier models, and semiconductor architecture"
+                categorySlug="ai"
+                stories={aiTechStories}
+                layoutType="ai-tech"
+                onSelectStory={handleSelectStory}
+                onViewCategory={(slug) => navigateToCategory(slug)}
+              />
 
-            {/* GAMING SECTION */}
-            <CategorySection
-              title="Gaming"
-              subtitle="Interactive entertainment, hardware engineering, and industry economics"
-              categorySlug="gaming"
-              stories={gamingStories}
-              layoutType="gaming-grid"
-              onSelectStory={handleSelectStory}
-              onViewCategory={(slug) => navigateToCategory(slug)}
-            />
+              {/* GAMING SECTION */}
+              <CategorySection
+                title="Gaming"
+                subtitle="Interactive entertainment, hardware engineering, and industry economics"
+                categorySlug="gaming"
+                stories={gamingStories}
+                layoutType="gaming-grid"
+                onSelectStory={handleSelectStory}
+                onViewCategory={(slug) => navigateToCategory(slug)}
+              />
 
-            {/* SCIENCE & SPACE SECTION */}
-            <CategorySection
-              title="Science & Space"
-              subtitle="Astrophysics, orbital logistics, and fundamental research"
-              categorySlug="science"
-              stories={scienceStories}
-              layoutType="science-feature"
-              onSelectStory={handleSelectStory}
-              onViewCategory={(slug) => navigateToCategory(slug)}
-            />
+              {/* SCIENCE & SPACE SECTION */}
+              <CategorySection
+                title="Science & Space"
+                subtitle="Astrophysics, orbital logistics, and fundamental research"
+                categorySlug="science"
+                stories={scienceStories}
+                layoutType="science-feature"
+                onSelectStory={handleSelectStory}
+                onViewCategory={(slug) => navigateToCategory(slug)}
+              />
 
-            {/* BUSINESS SECTION */}
-            <CategorySection
-              title="Business"
-              subtitle="Capital allocation, enterprise infrastructure, and global markets"
-              categorySlug="business"
-              stories={businessStories}
-              layoutType="business-columns"
-              onSelectStory={handleSelectStory}
-              onViewCategory={(slug) => navigateToCategory(slug)}
-            />
+              {/* BUSINESS SECTION */}
+              <CategorySection
+                title="Business"
+                subtitle="Capital allocation, enterprise infrastructure, and global markets"
+                categorySlug="business"
+                stories={businessStories}
+                layoutType="business-columns"
+                onSelectStory={handleSelectStory}
+                onViewCategory={(slug) => navigateToCategory(slug)}
+              />
 
-            {/* WORLD NEWS SECTION */}
-            <CategorySection
-              title="World"
-              subtitle="Diplomatic agreements, international policy, and global statecraft"
-              categorySlug="world"
-              stories={worldStories}
-              layoutType="world-restrained"
-              onSelectStory={handleSelectStory}
-              onViewCategory={(slug) => navigateToCategory(slug)}
-            />
+              {/* WORLD NEWS SECTION */}
+              <CategorySection
+                title="World"
+                subtitle="Diplomatic agreements, international policy, and global statecraft"
+                categorySlug="world"
+                stories={worldStories}
+                layoutType="world-restrained"
+                onSelectStory={handleSelectStory}
+                onViewCategory={(slug) => navigateToCategory(slug)}
+              />
 
-            {/* MOST READ RANKING LIST (01 to 05) */}
-            <MostRead
-              stories={mostReadStories}
-              onSelectStory={handleSelectStory}
-            />
-          </>
+              {/* MOST READ RANKING LIST (01 to 05) */}
+              <MostRead
+                stories={mostReadStories}
+                onSelectStory={handleSelectStory}
+              />
+            </>
+          ) : (
+            <HomepageLoading />
+          )
         ) : route.type === 'category' ? (
           // ================= UNIVERSAL CATEGORY PAGE ROUTE (/[category]) =================
           (() => {
@@ -307,29 +448,15 @@ export default function App() {
           })()
         ) : route.type === 'story' ? (
           // ================= UNIVERSAL STORY PAGE ROUTE (/story/[slug]) =================
-          (() => {
-            const story = newsRepository.getStoryBySlugSync(route.slug);
-            if (!story) {
-              return (
-                <StoryNotFound
-                  slug={route.slug}
-                  onNavigateHome={navigateToHome}
-                  onOpenSearch={() => setIsSearchOpen(true)}
-                  onSelectStory={handleSelectStory}
-                  suggestedStories={topStories}
-                />
-              );
-            }
-            return (
-              <StoryPage
-                story={story}
-                allStories={allStories}
-                onNavigateHome={navigateToHome}
-                onSelectCategory={navigateToCategory}
-                onSelectStory={handleSelectStory}
-              />
-            );
-          })()
+          <StoryRoute
+            slug={route.slug}
+            onNavigateHome={navigateToHome}
+            onSelectCategory={navigateToCategory}
+            onSelectStory={handleSelectStory}
+            onOpenSearch={() => setIsSearchOpen(true)}
+            suggestedStories={topStories}
+            allStories={allStories}
+          />
         ) : (
           // ================= 404 NOT FOUND =================
           <CategoryError

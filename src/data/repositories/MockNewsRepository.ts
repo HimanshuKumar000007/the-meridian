@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { NewsStory, StorySource, StoryUpdate } from '../../types/story';
+import type { NewsStory, StorySource, StoryUpdate, Fact } from '../../types/story';
 import type { NewsCategory, CategorySortMode, CategoryPageData } from '../../types/category';
 import type { NewsRepository, HomepageData, CategoryStoryQueryOptions } from '../../types/repository';
 import { MOCK_CATEGORIES } from '../mockCategories';
@@ -214,6 +214,17 @@ export class MockNewsRepository implements NewsRepository {
   public async getStorySources(storyId: string): Promise<StorySource[]> {
     const story = this.getStoryByIdSync(storyId);
     return story?.sources || [];
+  }
+
+  public async getStoryFacts(storyId: string): Promise<Fact[]> {
+    const story = this.getStoryByIdSync(storyId);
+    return story?.facts || [];
+  }
+
+  public async getRelatedStories(storyId: string): Promise<NewsStory[]> {
+    const story = this.getStoryByIdSync(storyId);
+    if (!story || !story.relatedStoryIds) return [];
+    return this.stories.filter((s) => story.relatedStoryIds?.includes(s.id) || story.relatedStoryIds?.includes(s.slug));
   }
 
   // ==========================================

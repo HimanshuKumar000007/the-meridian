@@ -46,6 +46,8 @@ export interface NewsRepository {
   // Sub-entity queries
   getStoryUpdates(storyId: string): Promise<StoryUpdate[]>;
   getStorySources(storyId: string): Promise<StorySource[]>;
+  getStoryFacts(storyId: string): Promise<import('./story').Fact[]>;
+  getRelatedStories(storyId: string): Promise<NewsStory[]>;
 
   // Category queries
   getCategoryBySlug(slug: string): Promise<NewsCategory | null>;

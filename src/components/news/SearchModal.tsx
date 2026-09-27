@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, ArrowRight, CornerDownLeft } from 'lucide-react';
 import { searchStories, type Story } from '../../data/mockNews';
+import { newsRepository } from '../../data/newsRepository';
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -58,8 +59,18 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onSel
       setResults([]);
       return;
     }
-    const found = searchStories(query);
-    setResults(found);
+    let isCurrent = true;
+    newsRepository
+      .searchStories(query)
+      .then((found) => {
+        if (isCurrent) setResults(found as any);
+      })
+      .catch(() => {
+        if (isCurrent) setResults(searchStories(query));
+      });
+    return () => {
+      isCurrent = false;
+    };
   }, [query]);
 
   if (!isOpen) return null;
