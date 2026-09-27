@@ -59,30 +59,28 @@ export class AutomationConfigService {
    * Returns true if authorized, false otherwise.
    */
   public verifyAuthHeader(authHeader?: string | null, customSecretHeader?: string | null): boolean {
-    const expectedSecret =
-      process.env.CRON_SECRET ||
-      process.env.AUTOMATION_CRON_SECRET ||
-      process.env.ADMIN_SECRET_KEY ||
-      process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const expectedSecret = process.env.AUTOMATION_CRON_SECRET || process.env.CRON_SECRET;
 
-    if (!expectedSecret) {
-      // In production, lack of secret rejects requests
+    if (!expectedSecret || expectedSecret.trim() === '') {
+      // In production, lack of configured cron secret strictly rejects requests
       return false;
     }
 
-    // Check custom secret header (e.g. x-cron-secret or x-admin-secret)
-    if (customSecretHeader && customSecretHeader.trim() === expectedSecret.trim()) {
-      return true;
+    // Extract provided token
+    const bearerToken = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : undefined;
+    const provided = bearerToken || (customSecretHeader ? customSecretHeader.trim() : undefined);
+
+    if (!provided || provided === '') {
+      return false;
     }
 
-    // Check Authorization: Bearer <secret>
-    if (authHeader) {
-      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-      if (token === expectedSecret.trim()) {
-        return true;
-      }
+    // Strict Security Guard: SUPABASE_SERVICE_ROLE_KEY must NEVER authenticate as the cron credential
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (serviceRoleKey && serviceRoleKey.trim() !== '' && provided === serviceRoleKey.trim()) {
+      return false;
     }
 
-    return false;
+    // Dedicated automation secret matching
+    return provided === expectedSecret.trim();
   }
 }

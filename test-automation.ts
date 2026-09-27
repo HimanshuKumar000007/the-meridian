@@ -170,6 +170,18 @@ async function runTests() {
       configService.verifyAuthHeader('Basic dXNlcjpwYXNz') === false,
       'Test 7d: Malformed authorization format rejected'
     );
+
+    // Strict Service-Role Key Rejection Tests (Phase 10C Security Requirement)
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-super-secret-key-12345';
+    assert(
+      configService.verifyAuthHeader(`Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`) === false,
+      'Test 7e: SUPABASE_SERVICE_ROLE_KEY strictly rejected as Bearer token'
+    );
+    assert(
+      configService.verifyAuthHeader(undefined, process.env.SUPABASE_SERVICE_ROLE_KEY) === false,
+      'Test 7f: SUPABASE_SERVICE_ROLE_KEY strictly rejected as custom header'
+    );
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   }
 
   // --- 8. DISTRIBUTED RUN LOCK TESTS ---
