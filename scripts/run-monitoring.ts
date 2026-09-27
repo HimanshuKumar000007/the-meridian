@@ -39,6 +39,7 @@ const isPrune = hasFlag('--prune');
 const isVerbose = hasFlag('--verbose');
 const shouldPersist = !isDryRun && !hasFlag('--no-persist');
 const targetService = getArg('--service');
+const baseUrlArg = getArg('--base-url') || process.env.DEPLOYED_URL || 'https://the-meridian-aptionaiged-4225.vercel.app';
 
 async function main() {
   console.log('====================================================');
@@ -46,6 +47,7 @@ async function main() {
   console.log('====================================================');
   console.log(`Timestamp:   ${new Date().toISOString()}`);
   console.log(`Mode:        ${isMock ? 'OFFLINE MOCK' : 'LIVE PRODUCTION'}`);
+  console.log(`Base URL:    ${baseUrlArg}`);
   console.log(`Action:      ${isReadiness ? 'READINESS PROBE' : 'HEALTH & TELEMETRY CHECK'}`);
   console.log(`Dry Run:     ${isDryRun ? 'YES (No DB updates)' : 'NO'}`);
   console.log(`Persist:     ${shouldPersist ? 'YES' : 'NO'}`);
@@ -73,6 +75,7 @@ async function main() {
   const monitoringService = new MonitoringService({
     client: supabaseClient,
     repository,
+    baseUrl: baseUrlArg,
   });
 
   if (isReadiness) {
