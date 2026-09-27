@@ -30,6 +30,7 @@ jobs:
             -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" \
             -H "Content-Type: application/json" \
             "${EXTRA_HEADERS[@]}" \
+            -d '{"trigger":"cron"}' \
             https://the-meridian-aptionaiged-4225.vercel.app/api/automation/orchestrator)
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
