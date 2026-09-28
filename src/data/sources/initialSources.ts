@@ -42,6 +42,7 @@ export const INITIAL_NEWS_SOURCES: NewsSource[] = [
     categories: ['ai', 'technology'],
     isActive: false, // Inactive: Anthropic does not maintain a public RSS endpoint (returns 404)
     consecutiveFailures: 0,
+    lastError: 'SOURCE_ENDPOINT_UNAVAILABLE',
   },
   {
     id: 'src-mit-tech-review-ai',
@@ -212,6 +213,7 @@ export const INITIAL_NEWS_SOURCES: NewsSource[] = [
     categories: ['business'],
     isActive: false, // Inactive: CNBC endpoint stalls/throttles response body exceeding timeouts
     consecutiveFailures: 0,
+    lastError: 'SOURCE_BLOCKED',
   },
 
   // ==========================================

@@ -1378,7 +1378,8 @@ var INITIAL_NEWS_SOURCES = [
     categories: ["ai", "technology"],
     isActive: false,
     // Inactive: Anthropic does not maintain a public RSS endpoint (returns 404)
-    consecutiveFailures: 0
+    consecutiveFailures: 0,
+    lastError: "SOURCE_ENDPOINT_UNAVAILABLE"
   },
   {
     id: "src-mit-tech-review-ai",
@@ -1544,7 +1545,8 @@ var INITIAL_NEWS_SOURCES = [
     categories: ["business"],
     isActive: false,
     // Inactive: CNBC endpoint stalls/throttles response body exceeding timeouts
-    consecutiveFailures: 0
+    consecutiveFailures: 0,
+    lastError: "SOURCE_BLOCKED"
   },
   // ==========================================
   // WORLD AFFAIRS & GEOPOLITICS
