@@ -23,7 +23,9 @@ export type ValidationIssueCode =
   | 'SENSITIVE_CLAIM'
   | 'TEMPORAL_CONFLICT'
   | 'CERTAINTY_INFLATION'
-  | 'CLICKBAIT_HEADLINE';
+  | 'CLICKBAIT_HEADLINE'
+  | 'INSUFFICIENT_ARTICLE_LENGTH'
+  | 'FILLER_PADDING_DETECTED';
 
 export interface ValidationIssue {
   code: ValidationIssueCode;
@@ -107,6 +109,8 @@ export interface NewsValidationResult {
 
   validatorVersion: string;
   inputHash: string;
+  contentHash?: string;
+  articleBodyWordCount?: number;
 
   createdAt: string;
   updatedAt: string;

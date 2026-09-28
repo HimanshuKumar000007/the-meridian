@@ -10,6 +10,12 @@ import type {
   PublicationReason,
 } from '../../types/publishing';
 import { PublicationPolicyService } from './PublicationPolicyService';
+import {
+  countArticleBodyWords,
+  extractArticleBodyProse,
+  detectFillerText,
+  MIN_ARTICLE_BODY_WORDS,
+} from '../../utils/wordCount';
 
 export class PublicationGateService {
   private policyService: PublicationPolicyService;
@@ -22,14 +28,18 @@ export class PublicationGateService {
    * Generates a deterministic SHA-256 hash of the canonical publishable content.
    */
   public static computeContentHash(story: any): string {
+    const blocks = story.content || story.contentBlocks || [];
+    const bodyProse = extractArticleBodyProse(blocks);
     const payload = JSON.stringify({
       title: (story.title || '').trim(),
       summary: (story.summary || story.dek || '').trim(),
       category: (story.category || '').toLowerCase().trim(),
-      content: (story.content || []).map((b: any) => ({
+      bodyProse: bodyProse.trim(),
+      content: blocks.map((b: any) => ({
         type: b.type,
-        text: b.text || b.quote || '',
+        text: b.text || b.quote || b.content || '',
         level: b.level,
+        items: b.items,
       })),
       facts: (story.facts || []).map((f: any) => ({
         label: f.label,
@@ -214,6 +224,40 @@ export class PublicationGateService {
     publishableFields.push('content');
 
     // ----------------------------------------------------
+    // 4b. 700-WORD MINIMUM ARTICLE BODY POLICY GATE
+    // ----------------------------------------------------
+    const bodyWordCount = countArticleBodyWords(story.content);
+    if (bodyWordCount < MIN_ARTICLE_BODY_WORDS) {
+      return {
+        decision: 'HOLD',
+        reason: 'INSUFFICIENT_ARTICLE_LENGTH',
+        blockingIssues: [
+          `Article body has ${bodyWordCount} words, which is below the ${MIN_ARTICLE_BODY_WORDS}-word minimum policy (requires >= ${MIN_ARTICLE_BODY_WORDS} substantive words).`,
+        ],
+        publishableFields,
+        publicationVersion: story.published_version || 1,
+        metadata: {
+          wordCount: bodyWordCount,
+          minRequired: MIN_ARTICLE_BODY_WORDS,
+        },
+      };
+    }
+
+    // Check for repetitive filler or padding in article body
+    const fillerCheck = detectFillerText(story.content);
+    if (fillerCheck.hasFiller) {
+      return {
+        decision: 'HOLD',
+        reason: 'MALFORMED_CONTENT',
+        blockingIssues: [
+          fillerCheck.reason || 'Article body contains repetitive filler or unnatural phrase looping.',
+        ],
+        publishableFields,
+        publicationVersion: story.published_version || 1,
+      };
+    }
+
+    // ----------------------------------------------------
     // 5. SOURCE ATTRIBUTION CHECK
     // ----------------------------------------------------
     const allSources = input.sources || story.sources || [];
@@ -277,9 +321,23 @@ export class PublicationGateService {
     }
 
     // ----------------------------------------------------
-    // 9. CONTENT HASH
+    // 9. CONTENT HASH & POST-VALIDATION INTEGRITY CHECK
     // ----------------------------------------------------
     const contentHash = PublicationGateService.computeContentHash(story);
+
+    if (validation && (validation as any).contentHash) {
+      if ((validation as any).contentHash !== contentHash) {
+        return {
+          decision: 'HOLD',
+          reason: 'CONTENT_HASH_MISMATCH',
+          blockingIssues: [
+            'Story content has been modified after validation. Content hash does not match validated hash.',
+          ],
+          publishableFields,
+          publicationVersion: story.published_version || 1,
+        };
+      }
+    }
 
     const targetVersion =
       lifecycleDecision.action === 'UPDATE'

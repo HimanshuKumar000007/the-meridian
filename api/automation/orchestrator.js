@@ -2332,6 +2332,12 @@ CRITICAL EDITORIAL PRINCIPLES:
 4. ORIGINAL DRAFTING: The contentBlocks must provide an original, well-structured journalistic summary and synthesis of the source facts. DO NOT copy full sentences or paragraphs verbatim from the source, except when providing brief, attributed quotes.
 5. CONFLICT DETECTION: If the source contains contradictory numbers, conflicting statements, or ambiguous facts, set "hasConflicts": true and document them in "conflictDetails".
 6. EVIDENCE MAPPING: For every major factual claim, provide exact matching excerpt text from the source in "sourceEvidence" and "facts".
+7. 700-WORD MINIMUM ARTICLE BODY POLICY: Whenever source material provides sufficient factual evidence, produce a comprehensive, well-structured, in-depth final article body of at least 700 words across structured contentBlocks.
+   - NO ARTIFICIAL CEILING: There is NO maximum word count. In-depth, investigative, and comprehensive reporting (700, 1,000, 1,500, 3,000+ words) is encouraged whenever supported by evidence.
+   - SUBSTANTIVE COVERAGE: Include historical background, context, implications, technical details, stakeholder impact, and chronological timeline.
+   - FACTUAL GROUNDING ONLY: NEVER fabricate facts or add repetitive filler or fluff to reach 700 words. Every claim must be grounded in verified source material.
+   - INSUFFICIENT EVIDENCE ROUTING: If verified source facts and legitimate context cannot support 700 words without padding, produce only what is factually supported and flag confidenceLevel: "low" or "conflicted" or set status to "review" so the candidate is held for human review.
+   - MULTI-SOURCE SYNTHESIS: When multiple related source reports are provided, synthesize verified claims across sources into rich reporting while maintaining precise source evidence mapping for every claim.
 
 CATEGORY TAXONOMY:
 - Categories: ai, technology, gaming, science, space, business, world, entertainment, cybersecurity, apps, hardware.
@@ -2382,9 +2388,11 @@ Return a single JSON object with the following structure:
     { "date": "Date/Time string", "title": "Milestone title", "description": "What occurred" }
   ],
   "contentBlocks": [
-    { "id": "block-1", "type": "paragraph", "content": "Original journalistic paragraph explaining the news..." },
+    { "id": "block-1", "type": "paragraph", "content": "Original journalistic paragraph explaining core news (aim for >=700 substantive words across body blocks when supported by facts; no filler or fabrication)..." },
     { "id": "block-2", "type": "heading", "content": "Context & Background", "level": 2 },
-    { "id": "block-3", "type": "paragraph", "content": "Additional details and source facts..." }
+    { "id": "block-3", "type": "paragraph", "content": "Historical background, technical details, industry or societal implications..." },
+    { "id": "block-4", "type": "heading", "content": "Stakeholder Impact & Outlook", "level": 2 },
+    { "id": "block-5", "type": "paragraph", "content": "Stakeholder perspectives, future milestones, and ongoing regulatory or market implications..." }
   ],
   "heroImage": null,
   "sourceEvidence": [
@@ -3092,7 +3100,7 @@ var MockExtractionRepository = class {
 };
 
 // src/services/validation/ValidationEngine.ts
-import { createHash as createHash2 } from "crypto";
+import { createHash as createHash3 } from "crypto";
 
 // src/services/validation/categoryTaxonomy.ts
 function normalizeCategory(category) {
@@ -3546,6 +3554,131 @@ var INCOMPATIBLE_CATEGORIES = {
   gaming: ["politics", "climate", "sports", "world", "ai"]
 };
 
+// src/utils/wordCount.ts
+var MIN_ARTICLE_BODY_WORDS = 700;
+function stripMarkup(text) {
+  if (!text || typeof text !== "string") return "";
+  return text.replace(/<!--[\s\S]*?-->/g, " ").replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ").replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/!\[.*?\]\(.*?\)/g, " ").replace(/\[([^\]]+)\]\(.*?\)/g, "$1").replace(/^#{1,6}\s+/gm, " ").replace(/[*_~`]/g, " ").replace(/^>\s+/gm, " ").replace(/^[-*_]{3,}\s*$/gm, " ").replace(/[\s\uFEFF\xA0]+/g, " ").trim();
+}
+function countWords(text) {
+  if (!text || typeof text !== "string") return 0;
+  const clean = stripMarkup(text);
+  if (!clean) return 0;
+  const tokens = clean.split(/\s+/).filter((t) => t.length > 0);
+  let count = 0;
+  for (const token of tokens) {
+    if (/[\p{L}\p{N}]/u.test(token)) {
+      count++;
+    }
+  }
+  return count;
+}
+function extractArticleBodyProse(contentOrStory) {
+  if (!contentOrStory) return "";
+  if (typeof contentOrStory === "string") {
+    return stripMarkup(contentOrStory);
+  }
+  let blocks = [];
+  if (Array.isArray(contentOrStory)) {
+    blocks = contentOrStory;
+  } else if (typeof contentOrStory === "object") {
+    if (Array.isArray(contentOrStory.content)) {
+      blocks = contentOrStory.content;
+    } else if (Array.isArray(contentOrStory.contentBlocks)) {
+      blocks = contentOrStory.contentBlocks;
+    }
+  }
+  if (!blocks || blocks.length === 0) {
+    return "";
+  }
+  const proseParts = [];
+  for (const block of blocks) {
+    if (!block || typeof block !== "object") continue;
+    const blockType = (block.type || "").toLowerCase();
+    if (blockType === "image" || blockType === "figure" || blockType === "media") {
+      continue;
+    }
+    if (blockType === "paragraph") {
+      const text = block.text || block.content || "";
+      if (typeof text === "string") {
+        proseParts.push(text);
+      }
+    } else if (blockType === "heading") {
+      const text = block.text || block.content || "";
+      if (typeof text === "string") {
+        proseParts.push(text);
+      }
+    } else if (blockType === "quote" || blockType === "blockquote") {
+      const text = block.quote || block.text || block.content || "";
+      if (typeof text === "string") {
+        proseParts.push(text);
+      }
+    } else if (blockType === "callout") {
+      const text = block.text || block.content || "";
+      if (typeof text === "string") {
+        proseParts.push(text);
+      }
+    } else if (blockType === "list" && Array.isArray(block.items)) {
+      const listText = block.items.filter((item) => typeof item === "string").join(" ");
+      if (listText) {
+        proseParts.push(listText);
+      }
+    } else if (block.text && typeof block.text === "string" && blockType !== "ad" && blockType !== "nav") {
+      proseParts.push(block.text);
+    }
+  }
+  return stripMarkup(proseParts.join("\n\n"));
+}
+function countArticleBodyWords(contentOrStory) {
+  const prose = extractArticleBodyProse(contentOrStory);
+  return countWords(prose);
+}
+function detectFillerText(contentOrStory) {
+  const prose = extractArticleBodyProse(contentOrStory);
+  const words = prose.toLowerCase().split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w));
+  if (words.length < 100) {
+    return {
+      hasFiller: false,
+      uniqueWordRatio: 1,
+      maxSentenceRepetitions: 1
+    };
+  }
+  const sentences = prose.split(/[.!?]+/).map((s) => s.trim().toLowerCase()).filter((s) => s.length > 25);
+  const sentenceCounts = {};
+  let maxSentenceRepetitions = 0;
+  let repeatedSentence = "";
+  for (const s of sentences) {
+    sentenceCounts[s] = (sentenceCounts[s] || 0) + 1;
+    if (sentenceCounts[s] > maxSentenceRepetitions) {
+      maxSentenceRepetitions = sentenceCounts[s];
+      repeatedSentence = s;
+    }
+  }
+  const uniqueWords = new Set(words);
+  const uniqueWordRatio = Number((uniqueWords.size / words.length).toFixed(3));
+  if (maxSentenceRepetitions > 2) {
+    return {
+      hasFiller: true,
+      uniqueWordRatio,
+      maxSentenceRepetitions,
+      reason: `Sentence repeated ${maxSentenceRepetitions} times: "${repeatedSentence.substring(0, 60)}..."`
+    };
+  }
+  if (words.length >= 500 && uniqueWordRatio < 0.2) {
+    return {
+      hasFiller: true,
+      uniqueWordRatio,
+      maxSentenceRepetitions,
+      reason: `Vocabulary diversity ratio (${uniqueWordRatio}) is unnaturally low (< 0.20), indicating repetitive filler.`
+    };
+  }
+  return {
+    hasFiller: false,
+    uniqueWordRatio,
+    maxSentenceRepetitions
+  };
+}
+
 // src/services/validation/deterministicValidators.ts
 function validateSourceUrl(url) {
   if (!url || typeof url !== "string" || url.trim().length === 0) {
@@ -3901,25 +4034,519 @@ function checkSourceSufficiency(sourceText) {
   };
 }
 
+// src/services/publishing/PublicationGateService.ts
+import { createHash as createHash2 } from "crypto";
+
+// src/services/publishing/PublicationPolicyService.ts
+var DEFAULT_PUBLICATION_POLICY = {
+  safeAutomaticCategories: [
+    "technology",
+    "gaming",
+    "apps",
+    "hardware",
+    "science",
+    "space",
+    "ai"
+  ],
+  reviewRequiredCategories: [
+    "politics",
+    "elections",
+    "war",
+    "crime",
+    "health",
+    "financial-markets",
+    "business",
+    "disasters"
+  ],
+  automatedPublishingEnabled: process.env.AUTOMATED_PUBLISHING_ENABLED !== "false" && process.env.AUTOMATED_PUBLISHING_ENABLED !== "0",
+  categorySwitches: {
+    technology: true,
+    gaming: true,
+    apps: true,
+    hardware: true,
+    science: true,
+    space: true,
+    ai: true,
+    politics: false,
+    elections: false,
+    war: false,
+    crime: false,
+    health: false,
+    "financial-markets": false,
+    business: false,
+    disasters: false
+  },
+  blockedSources: [],
+  maxBacklogAgeHours: 72,
+  // 3 days max age for automated publishing (backlog safety)
+  defaultBatchLimit: 5,
+  requireHeroImage: false
+  // fallback images are allowed
+};
+var PublicationPolicyService = class {
+  constructor(customConfig) {
+    this.config = {
+      ...DEFAULT_PUBLICATION_POLICY,
+      ...customConfig,
+      categorySwitches: {
+        ...DEFAULT_PUBLICATION_POLICY.categorySwitches,
+        ...customConfig?.categorySwitches || {}
+      }
+    };
+  }
+  getConfig() {
+    return { ...this.config };
+  }
+  setGlobalKillSwitch(enabled) {
+    this.config.automatedPublishingEnabled = enabled;
+  }
+  setCategorySwitch(category, enabled) {
+    this.config.categorySwitches[category.toLowerCase()] = enabled;
+  }
+  blockSource(sourceNameOrUrl) {
+    this.config.blockedSources.push(sourceNameOrUrl.toLowerCase());
+  }
+  /**
+   * Evaluate whether a candidate story passes publication policy rules.
+   */
+  evaluate(input) {
+    const blockingIssues = [];
+    if (!this.config.automatedPublishingEnabled && !input.force) {
+      return {
+        allowed: false,
+        reason: "KILL_SWITCH_DISABLED",
+        blockingIssues: ["Automated publishing is globally disabled (KILL_SWITCH_DISABLED)."]
+      };
+    }
+    const { story, validation, extraction } = input;
+    const rawCategory = (story.category || extraction.category || "").toLowerCase().trim();
+    const cleanCategory = rawCategory === "tech" ? "technology" : rawCategory;
+    const sources = input.sources || story.sources || [];
+    const primarySource = sources.find((s) => s.isPrimary || s.is_primary) || sources[0];
+    if (primarySource) {
+      const sourceName = (primarySource.name || "").toLowerCase();
+      const sourceUrl = (primarySource.url || "").toLowerCase();
+      const isBlocked = this.config.blockedSources.some(
+        (b) => sourceName.includes(b) || sourceUrl && sourceUrl.includes(b)
+      );
+      if (isBlocked) {
+        return {
+          allowed: false,
+          reason: "SOURCE_DISABLED",
+          blockingIssues: [`Source '${primarySource.name}' is blocked by publication policy.`]
+        };
+      }
+    }
+    const isSafe = this.config.safeAutomaticCategories.includes(cleanCategory);
+    const isReviewRequired = this.config.reviewRequiredCategories.includes(cleanCategory) || !isSafe;
+    if (isReviewRequired && !input.force) {
+      return {
+        allowed: false,
+        reason: "SENSITIVE_TOPIC",
+        blockingIssues: [
+          `Category '${cleanCategory}' is designated review-required and requires manual editorial sign-off.`
+        ]
+      };
+    }
+    const fullText = [
+      story.title || "",
+      story.summary || "",
+      story.dek || "",
+      ...story.quickSummary || [],
+      ...(extraction.sourceEvidence || []).map((c) => c.claim || "")
+    ].join(" ").toLowerCase();
+    const politicalPatterns = [
+      /\belection\b/i,
+      /\bpredicted winner\b/i,
+      /\blikely winner\b/i,
+      /\bpolling lead\b/i,
+      /\bvoter fraud\b/i,
+      /\bunverified allegations\b/i,
+      /\bpresidential debate\b/i,
+      /\bballot stuffing\b/i
+    ];
+    if (politicalPatterns.some((pattern) => pattern.test(fullText)) && !input.force) {
+      blockingIssues.push("Political/electoral claims detected. Routed to HOLD for human review.");
+      return {
+        allowed: false,
+        reason: "SENSITIVE_TOPIC",
+        blockingIssues
+      };
+    }
+    const healthPatterns = [
+      /\bmiracle cure\b/i,
+      /\bcures cancer\b/i,
+      /\bclinical diagnosis\b/i,
+      /\bguaranteed treatment\b/i,
+      /\bunproven therapy\b/i,
+      /\bmedical breakthrough cures\b/i
+    ];
+    if (healthPatterns.some((pattern) => pattern.test(fullText)) && !input.force) {
+      blockingIssues.push("Unverified medical/treatment claims detected. Routed to HOLD for editorial review.");
+      return {
+        allowed: false,
+        reason: "SENSITIVE_TOPIC",
+        blockingIssues
+      };
+    }
+    const financialPatterns = [
+      /\bguaranteed returns\b/i,
+      /\binvestment advice\b/i,
+      /\bbuy this stock now\b/i,
+      /\b100x return\b/i,
+      /\bmarket crash imminent\b/i,
+      /\brisk-free profit\b/i
+    ];
+    if (financialPatterns.some((pattern) => pattern.test(fullText)) && !input.force) {
+      blockingIssues.push("Financial advice or guaranteed returns detected. Routed to HOLD for human review.");
+      return {
+        allowed: false,
+        reason: "SENSITIVE_TOPIC",
+        blockingIssues
+      };
+    }
+    const disasterPatterns = [
+      /\bcasualties\b/i,
+      /\bdeath toll\b/i,
+      /\bmass shooting\b/i,
+      /\bterrorist attack\b/i,
+      /\bhostage situation\b/i,
+      /\bwar crimes\b/i,
+      /\bfatal crash\b/i
+    ];
+    if (disasterPatterns.some((pattern) => pattern.test(fullText)) && !input.force) {
+      blockingIssues.push("High-risk sensitive event (casualties/disaster/war) detected. Routed to HOLD.");
+      return {
+        allowed: false,
+        reason: "SENSITIVE_TOPIC",
+        blockingIssues
+      };
+    }
+    if (validation.sensitiveTopicFlags && validation.sensitiveTopicFlags.length > 0 && !input.force) {
+      blockingIssues.push(
+        `Validator flagged sensitive topics: ${validation.sensitiveTopicFlags.join(", ")}`
+      );
+      return {
+        allowed: false,
+        reason: "SENSITIVE_TOPIC",
+        blockingIssues
+      };
+    }
+    if (this.config.categorySwitches[cleanCategory] === false && !input.force) {
+      return {
+        allowed: false,
+        reason: "CATEGORY_DISABLED",
+        blockingIssues: [
+          `Automated publishing for category '${cleanCategory}' is explicitly disabled.`
+        ]
+      };
+    }
+    if (story.published_at || extraction.eventDate) {
+      const pubDate = new Date(story.published_at || extraction.eventDate || Date.now());
+      const ageHours = (Date.now() - pubDate.getTime()) / (1e3 * 60 * 60);
+      if (ageHours > this.config.maxBacklogAgeHours && !input.force) {
+        blockingIssues.push(
+          `Story date is ${Math.round(ageHours)}h old (exceeds ${this.config.maxBacklogAgeHours}h safety cutoff). Requires manual release.`
+        );
+        return {
+          allowed: false,
+          reason: "PUBLICATION_POLICY_BLOCK",
+          blockingIssues
+        };
+      }
+    }
+    return {
+      allowed: true,
+      reason: input.lifecycleDecision.action === "CREATE" ? "AUTO_PUBLISH_VALID_CREATE" : "AUTO_PUBLISH_VALID_UPDATE",
+      blockingIssues: []
+    };
+  }
+};
+
+// src/services/publishing/PublicationGateService.ts
+var PublicationGateService = class _PublicationGateService {
+  constructor(policyService) {
+    this.policyService = policyService || new PublicationPolicyService();
+  }
+  /**
+   * Generates a deterministic SHA-256 hash of the canonical publishable content.
+   */
+  static computeContentHash(story) {
+    const blocks = story.content || story.contentBlocks || [];
+    const bodyProse = extractArticleBodyProse(blocks);
+    const payload = JSON.stringify({
+      title: (story.title || "").trim(),
+      summary: (story.summary || story.dek || "").trim(),
+      category: (story.category || "").toLowerCase().trim(),
+      bodyProse: bodyProse.trim(),
+      content: blocks.map((b) => ({
+        type: b.type,
+        text: b.text || b.quote || b.content || "",
+        level: b.level,
+        items: b.items
+      })),
+      facts: (story.facts || []).map((f) => ({
+        label: f.label,
+        value: f.value
+      }))
+    });
+    return createHash2("sha256").update(payload).digest("hex");
+  }
+  /**
+   * Evaluates all publication gates for an incoming candidate.
+   */
+  evaluate(input) {
+    const blockingIssues = [];
+    const publishableFields = [];
+    const { story, lifecycleDecision, validation, extraction } = input;
+    if (validation.status === "rejected") {
+      return {
+        decision: "REJECT",
+        reason: "VALIDATION_REJECTED",
+        blockingIssues: ["Candidate was rejected by validation engine (unverified/hallucinated content)."],
+        publishableFields: [],
+        publicationVersion: story.published_version || 1
+      };
+    }
+    if (validation.status === "insufficient_evidence") {
+      return {
+        decision: "HOLD",
+        reason: "LOW_EVIDENCE",
+        blockingIssues: ["Candidate has insufficient source evidence (<120 characters or missing facts)."],
+        publishableFields: [],
+        publicationVersion: story.published_version || 1
+      };
+    }
+    if (validation.status === "needs_review" && !input.force) {
+      return {
+        decision: "HOLD",
+        reason: "VALIDATION_REVIEW",
+        blockingIssues: ["Validation requires human editorial review before publication."],
+        publishableFields: [],
+        publicationVersion: story.published_version || 1
+      };
+    }
+    const hasCriticalIssues = (validation.issues || []).some(
+      (iss) => iss.severity === "critical"
+    );
+    if (hasCriticalIssues && !input.force) {
+      return {
+        decision: "REJECT",
+        reason: "VALIDATION_REJECTED",
+        blockingIssues: [
+          "Validation contains one or more critical issues: " + validation.issues.filter((i) => i.severity === "critical").map((i) => i.message).join("; ")
+        ],
+        publishableFields: [],
+        publicationVersion: story.published_version || 1
+      };
+    }
+    if (lifecycleDecision.action === "REJECT") {
+      return {
+        decision: "REJECT",
+        reason: "LIFECYCLE_HOLD_OR_REJECT",
+        blockingIssues: [`Lifecycle action is REJECT: ${lifecycleDecision.reason}`],
+        publishableFields: [],
+        publicationVersion: story.published_version || 1
+      };
+    }
+    if (lifecycleDecision.action === "HOLD" && !input.force) {
+      return {
+        decision: "HOLD",
+        reason: "LIFECYCLE_HOLD_OR_REJECT",
+        blockingIssues: [`Lifecycle action is HOLD: ${lifecycleDecision.reason}`],
+        publishableFields: [],
+        publicationVersion: story.published_version || 1
+      };
+    }
+    if (!story.title || story.title.trim().length < 10) {
+      blockingIssues.push("Title is missing or under 10 characters.");
+    } else {
+      publishableFields.push("title");
+    }
+    const summaryText = story.summary || story.dek || "";
+    if (!summaryText || summaryText.trim().length < 25) {
+      blockingIssues.push("Summary/dek is missing or under 25 characters.");
+    } else {
+      publishableFields.push("summary");
+    }
+    if (!story.category || story.category.trim().length === 0) {
+      blockingIssues.push("Category is missing.");
+    } else {
+      publishableFields.push("category");
+    }
+    if (!story.slug || story.slug.trim().length < 3) {
+      blockingIssues.push("Slug is missing or invalid.");
+    } else {
+      publishableFields.push("slug");
+    }
+    const pubDate = story.published_at || story.publishedAt;
+    if (!pubDate || isNaN(Date.parse(pubDate))) {
+      blockingIssues.push("Published timestamp is missing or malformed.");
+    } else {
+      publishableFields.push("publishedAt");
+    }
+    if (blockingIssues.length > 0) {
+      return {
+        decision: "HOLD",
+        reason: "MISSING_REQUIRED_FIELD",
+        blockingIssues,
+        publishableFields,
+        publicationVersion: story.published_version || 1
+      };
+    }
+    if (!story.content || !Array.isArray(story.content) || story.content.length === 0) {
+      return {
+        decision: "HOLD",
+        reason: "MALFORMED_CONTENT",
+        blockingIssues: ["Story content blocks are empty or not an array."],
+        publishableFields,
+        publicationVersion: story.published_version || 1
+      };
+    }
+    const hasSubstantiveBlock = story.content.some((b) => {
+      if (b.type === "paragraph" && b.text && b.text.trim().length >= 40) return true;
+      if (b.type === "quote" && b.quote && b.quote.trim().length >= 30) return true;
+      if (b.type === "callout" && b.text && b.text.trim().length >= 40) return true;
+      return false;
+    });
+    if (!hasSubstantiveBlock) {
+      return {
+        decision: "HOLD",
+        reason: "MALFORMED_CONTENT",
+        blockingIssues: ["Story content lacks at least one substantive article block (>=40 chars)."],
+        publishableFields,
+        publicationVersion: story.published_version || 1
+      };
+    }
+    const rawContentStr = JSON.stringify(story.content);
+    if (/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi.test(rawContentStr)) {
+      return {
+        decision: "REJECT",
+        reason: "MALFORMED_CONTENT",
+        blockingIssues: ["Raw script tags detected in article content."],
+        publishableFields,
+        publicationVersion: story.published_version || 1
+      };
+    }
+    publishableFields.push("content");
+    const bodyWordCount = countArticleBodyWords(story.content);
+    if (bodyWordCount < MIN_ARTICLE_BODY_WORDS) {
+      return {
+        decision: "HOLD",
+        reason: "INSUFFICIENT_ARTICLE_LENGTH",
+        blockingIssues: [
+          `Article body has ${bodyWordCount} words, which is below the ${MIN_ARTICLE_BODY_WORDS}-word minimum policy (requires >= ${MIN_ARTICLE_BODY_WORDS} substantive words).`
+        ],
+        publishableFields,
+        publicationVersion: story.published_version || 1,
+        metadata: {
+          wordCount: bodyWordCount,
+          minRequired: MIN_ARTICLE_BODY_WORDS
+        }
+      };
+    }
+    const fillerCheck = detectFillerText(story.content);
+    if (fillerCheck.hasFiller) {
+      return {
+        decision: "HOLD",
+        reason: "MALFORMED_CONTENT",
+        blockingIssues: [
+          fillerCheck.reason || "Article body contains repetitive filler or unnatural phrase looping."
+        ],
+        publishableFields,
+        publicationVersion: story.published_version || 1
+      };
+    }
+    const allSources = input.sources || story.sources || [];
+    const hasValidSource = allSources.some(
+      (s) => s.name && s.name.trim().length > 0 && s.url && /^https?:\/\//i.test(s.url)
+    ) || extraction.sources && extraction.sources.some(
+      (s) => s.name && s.name.trim().length > 0 && s.url && /^https?:\/\//i.test(s.url)
+    );
+    if (!hasValidSource) {
+      return {
+        decision: "HOLD",
+        reason: "MISSING_SOURCE",
+        blockingIssues: ["No valid primary source with HTTP/HTTPS URL found."],
+        publishableFields,
+        publicationVersion: story.published_version || 1
+      };
+    }
+    publishableFields.push("sources");
+    if (story.image && !/^https?:\/\//i.test(story.image)) {
+      blockingIssues.push(`Hero image URL '${story.image}' is invalid. Will rely on fallback.`);
+    }
+    if (input.scheduledFor) {
+      const scheduleTime = Date.parse(input.scheduledFor);
+      if (!isNaN(scheduleTime) && scheduleTime > Date.now()) {
+        return {
+          decision: "HOLD",
+          reason: "SCHEDULED_FUTURE",
+          blockingIssues: [
+            `Story is scheduled for future publication at ${new Date(scheduleTime).toISOString()}`
+          ],
+          publishableFields,
+          publicationVersion: story.published_version || 1
+        };
+      }
+    }
+    const policyResult = this.policyService.evaluate(input);
+    if (!policyResult.allowed) {
+      return {
+        decision: "HOLD",
+        reason: policyResult.reason,
+        blockingIssues: policyResult.blockingIssues,
+        publishableFields,
+        publicationVersion: story.published_version || 1
+      };
+    }
+    const contentHash = _PublicationGateService.computeContentHash(story);
+    if (validation && validation.contentHash) {
+      if (validation.contentHash !== contentHash) {
+        return {
+          decision: "HOLD",
+          reason: "CONTENT_HASH_MISMATCH",
+          blockingIssues: [
+            "Story content has been modified after validation. Content hash does not match validated hash."
+          ],
+          publishableFields,
+          publicationVersion: story.published_version || 1
+        };
+      }
+    }
+    const targetVersion = lifecycleDecision.action === "UPDATE" ? (story.published_version || 1) + 1 : story.published_version || 1;
+    return {
+      decision: "PUBLISH",
+      reason: lifecycleDecision.action === "CREATE" ? "AUTO_PUBLISH_VALID_CREATE" : "AUTO_PUBLISH_VALID_UPDATE",
+      blockingIssues: [],
+      publishableFields,
+      publicationVersion: targetVersion,
+      contentHash
+    };
+  }
+};
+
 // src/services/validation/ValidationEngine.ts
 var CURRENT_VALIDATOR_VERSION = "v1.0.0-independent-quality-gate";
 var ValidationEngine = class {
   constructor(options = {}) {
     this.repository = options.repository;
     this.validatorVersion = options.validatorVersion || CURRENT_VALIDATOR_VERSION;
+    this.enforceArticleLength = options.enforceArticleLength ?? false;
   }
   /**
    * Computes a deterministic SHA-256 hash of the validation input for idempotency.
    */
   generateInputHash(extractionId, outputHash, sourceText) {
     const raw = `${extractionId}|${outputHash}|${sourceText}`;
-    return createHash2("sha256").update(raw, "utf8").digest("hex");
+    return createHash3("sha256").update(raw, "utf8").digest("hex");
   }
   /**
    * Executes full fact validation on an extracted candidate against source text.
    */
   async validate(input, options = {}) {
     const { extraction, sourceText } = input;
+    const enforceLength = options.enforceArticleLength ?? input.enforceArticleLength ?? this.enforceArticleLength ?? false;
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const extractionId = extraction.id;
     const title = extraction.title || "";
@@ -3964,7 +4591,7 @@ var ValidationEngine = class {
       validatedFields.facts = "unsupported";
       rejectedFields.push("sourceText");
       const result2 = {
-        id: `val_${createHash2("md5").update(`${extractionId}_${inputHash}`).digest("hex").substring(0, 16)}`,
+        id: `val_${createHash3("md5").update(`${extractionId}_${inputHash}`).digest("hex").substring(0, 16)}`,
         extractionId,
         status: "insufficient_evidence",
         overallScore: 0,
@@ -3987,6 +4614,14 @@ var ValidationEngine = class {
         sensitiveTopicFlags: [],
         validatorVersion: this.validatorVersion,
         inputHash,
+        contentHash: PublicationGateService.computeContentHash({
+          title,
+          summary,
+          category,
+          content: contentBlocks,
+          facts
+        }),
+        articleBodyWordCount: countArticleBodyWords(contentBlocks),
         createdAt: now,
         updatedAt: now
       };
@@ -4130,6 +4765,33 @@ var ValidationEngine = class {
       });
       validatedFields.title = "needs_review";
     }
+    const bodyWordCount = countArticleBodyWords(contentBlocks);
+    if (enforceLength) {
+      if (bodyWordCount < MIN_ARTICLE_BODY_WORDS) {
+        issues.push({
+          code: "INSUFFICIENT_ARTICLE_LENGTH",
+          severity: "error",
+          field: "content",
+          message: `Article body has ${bodyWordCount} words, which is below the ${MIN_ARTICLE_BODY_WORDS}-word minimum policy (requires >= ${MIN_ARTICLE_BODY_WORDS} substantive words).`,
+          evidence: `Word count: ${bodyWordCount} / ${MIN_ARTICLE_BODY_WORDS}`,
+          createdAt: now
+        });
+        validatedFields.content = "needs_review";
+        rejectedFields.push("content");
+      }
+      const fillerCheck = detectFillerText(contentBlocks);
+      if (fillerCheck.hasFiller) {
+        issues.push({
+          code: "FILLER_PADDING_DETECTED",
+          severity: "error",
+          field: "content",
+          message: fillerCheck.reason || "Article body contains repetitive filler or padding phrases.",
+          createdAt: now
+        });
+        validatedFields.content = "needs_review";
+        rejectedFields.push("content");
+      }
+    }
     const totalClaims = Math.max(1, facts.length + entities.length + summaryPoints.length);
     const passedClaims = numberCheck.result.numbersPassed + entityCheck.result.entitiesPassed + quoteCheck.result.quotesPassed + (categoryResult.status === "match" ? 1 : 0);
     const claimCoverage = Math.min(1, Math.max(0, passedClaims / totalClaims));
@@ -4162,7 +4824,14 @@ var ValidationEngine = class {
     } else {
       status = "valid";
     }
-    const validationId = `val_${createHash2("md5").update(`${extractionId}_${inputHash}`).digest("hex").substring(0, 16)}`;
+    const validationId = `val_${createHash3("md5").update(`${extractionId}_${inputHash}`).digest("hex").substring(0, 16)}`;
+    const contentHash = PublicationGateService.computeContentHash({
+      title,
+      summary,
+      category,
+      content: contentBlocks,
+      facts
+    });
     const result = {
       id: validationId,
       extractionId,
@@ -4182,6 +4851,8 @@ var ValidationEngine = class {
       sensitiveTopicFlags: sensitiveFlags,
       validatorVersion: this.validatorVersion,
       inputHash,
+      contentHash,
+      articleBodyWordCount: bodyWordCount,
       createdAt: now,
       updatedAt: now
     };
@@ -4189,6 +4860,14 @@ var ValidationEngine = class {
       await this.repository.saveValidation(result);
     }
     return result;
+  }
+  /**
+   * Verifies that candidate or story content has not mutated since validation.
+   */
+  static verifyContentIntegrity(storyOrCandidate, validatedHash) {
+    if (!validatedHash) return false;
+    const currentHash = PublicationGateService.computeContentHash(storyOrCandidate);
+    return currentHash === validatedHash;
   }
 };
 
@@ -4432,10 +5111,10 @@ var MockValidationRepository = class {
 };
 
 // src/services/lifecycle/StoryLifecycleEngine.ts
-import { createHash as createHash4 } from "crypto";
+import { createHash as createHash5 } from "crypto";
 
 // src/services/lifecycle/StoryClusteringService.ts
-import { createHash as createHash3 } from "crypto";
+import { createHash as createHash4 } from "crypto";
 var EVENT_TYPE_KEYWORDS = {
   launch: ["launch", "launches", "unveil", "unveils", "announce", "announces", "release", "releases", "introduce", "introduces", "reveal", "reveals"],
   earnings: ["earnings", "revenue", "profit", "quarterly", "q1", "q2", "q3", "q4", "financial results", "fiscal"],
@@ -4543,7 +5222,7 @@ var StoryClusteringService = class {
     const eventType = this.extractEventType(candidate.title, candidate.summary);
     const dateBucket = this.computeDateBucket(candidate.eventDate || candidate.publishedAt);
     const entitySignature = primaryEntities.join("-") || "unknown";
-    const entityHash = createHash3("md5").update(entitySignature).digest("hex").substring(0, 8);
+    const entityHash = createHash4("md5").update(entitySignature).digest("hex").substring(0, 8);
     const rawKey = `${category}:${entityHash}:${eventType}:${dateBucket}`;
     const cleanSlug = `${category}-${entitySignature.substring(0, 30).replace(/\s+/g, "-")}-${eventType}-${dateBucket}`.toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-");
     return `cluster_${cleanSlug}`;
@@ -4554,7 +5233,7 @@ var StoryClusteringService = class {
   createCluster(candidate) {
     const clusterKey = this.generateClusterKey(candidate);
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    const clusterId = `clus_${createHash3("md5").update(clusterKey).digest("hex").substring(0, 16)}`;
+    const clusterId = `clus_${createHash4("md5").update(clusterKey).digest("hex").substring(0, 16)}`;
     return {
       id: clusterId,
       clusterKey,
@@ -4811,7 +5490,7 @@ var StoryLifecycleEngine = class {
     }
     if (validation.status === "rejected") {
       const decision = {
-        id: `lc_${createHash4("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
+        id: `lc_${createHash5("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
         action: "REJECT",
         storyId: null,
         clusterId: null,
@@ -4831,7 +5510,7 @@ var StoryLifecycleEngine = class {
     }
     if (validation.status === "insufficient_evidence") {
       const decision = {
-        id: `lc_${createHash4("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
+        id: `lc_${createHash5("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
         action: "REJECT",
         storyId: null,
         clusterId: null,
@@ -4851,7 +5530,7 @@ var StoryLifecycleEngine = class {
     }
     if (validation.status === "needs_review") {
       const decision = {
-        id: `lc_${createHash4("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
+        id: `lc_${createHash5("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
         action: "HOLD",
         storyId: null,
         clusterId: null,
@@ -4922,7 +5601,7 @@ var StoryLifecycleEngine = class {
     const existingStories = await this.repository.findExistingStories(candidate.category);
     const matchResult = this.matchingEngine.match(candidate, clusterKey, existingStories);
     if (!matchResult.matchedStory) {
-      const shortId = createHash4("md5").update(`${candidate.id}_${now}`).digest("hex").substring(0, 8);
+      const shortId = createHash5("md5").update(`${candidate.id}_${now}`).digest("hex").substring(0, 8);
       const storyId = `story_${shortId}`;
       const slug = this.generateSlug(candidate.title, shortId);
       const newStory = {
@@ -4963,7 +5642,7 @@ var StoryLifecycleEngine = class {
         );
       }
       const decision2 = {
-        id: `lc_${createHash4("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
+        id: `lc_${createHash5("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
         action: "CREATE",
         storyId,
         clusterId: cluster.id,
@@ -5018,7 +5697,7 @@ var StoryLifecycleEngine = class {
         );
       }
       const decision2 = {
-        id: `lc_${createHash4("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
+        id: `lc_${createHash5("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
         action: "UPDATE",
         storyId: existingStory.id,
         clusterId: matchResult.matchedCluster?.id || cluster.id,
@@ -5042,7 +5721,7 @@ var StoryLifecycleEngine = class {
       }
     }
     const decision = {
-      id: `lc_${createHash4("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
+      id: `lc_${createHash5("md5").update(`${extractionId}_${validationId}`).digest("hex").substring(0, 16)}`,
       action: "NO_OP",
       storyId: existingStory.id,
       clusterId: matchResult.matchedCluster?.id || cluster.id,
@@ -5772,7 +6451,7 @@ var SupabaseReviewNotificationStateRepository = class {
 };
 
 // src/services/notification/OperatorNotificationService.ts
-import { createHash as createHash5 } from "crypto";
+import { createHash as createHash6 } from "crypto";
 
 // src/services/notification/providers/GenericWebhookProvider.ts
 var GenericWebhookProvider = class {
@@ -6147,7 +6826,7 @@ var OperatorNotificationService = class {
     const status = input.validationStatus || "needs_review";
     const reason = (input.reason || "").trim();
     const sortedIssues = (input.issues || []).map((i) => `${i.code}:${i.field || ""}:${i.message || ""}`).sort().join("|");
-    return createHash5("sha256").update(`${input.storyId}::${status}::${reason}::${sortedIssues}`).digest("hex").substring(0, 32);
+    return createHash6("sha256").update(`${input.storyId}::${status}::${reason}::${sortedIssues}`).digest("hex").substring(0, 32);
   }
   /**
    * Generates standard review URL for the site operator.
@@ -6322,453 +7001,6 @@ var OperatorNotificationService = class {
         stateHash
       };
     }
-  }
-};
-
-// src/services/publishing/PublicationGateService.ts
-import { createHash as createHash6 } from "crypto";
-
-// src/services/publishing/PublicationPolicyService.ts
-var DEFAULT_PUBLICATION_POLICY = {
-  safeAutomaticCategories: [
-    "technology",
-    "gaming",
-    "apps",
-    "hardware",
-    "science",
-    "space",
-    "ai"
-  ],
-  reviewRequiredCategories: [
-    "politics",
-    "elections",
-    "war",
-    "crime",
-    "health",
-    "financial-markets",
-    "business",
-    "disasters"
-  ],
-  automatedPublishingEnabled: process.env.AUTOMATED_PUBLISHING_ENABLED !== "false" && process.env.AUTOMATED_PUBLISHING_ENABLED !== "0",
-  categorySwitches: {
-    technology: true,
-    gaming: true,
-    apps: true,
-    hardware: true,
-    science: true,
-    space: true,
-    ai: true,
-    politics: false,
-    elections: false,
-    war: false,
-    crime: false,
-    health: false,
-    "financial-markets": false,
-    business: false,
-    disasters: false
-  },
-  blockedSources: [],
-  maxBacklogAgeHours: 72,
-  // 3 days max age for automated publishing (backlog safety)
-  defaultBatchLimit: 5,
-  requireHeroImage: false
-  // fallback images are allowed
-};
-var PublicationPolicyService = class {
-  constructor(customConfig) {
-    this.config = {
-      ...DEFAULT_PUBLICATION_POLICY,
-      ...customConfig,
-      categorySwitches: {
-        ...DEFAULT_PUBLICATION_POLICY.categorySwitches,
-        ...customConfig?.categorySwitches || {}
-      }
-    };
-  }
-  getConfig() {
-    return { ...this.config };
-  }
-  setGlobalKillSwitch(enabled) {
-    this.config.automatedPublishingEnabled = enabled;
-  }
-  setCategorySwitch(category, enabled) {
-    this.config.categorySwitches[category.toLowerCase()] = enabled;
-  }
-  blockSource(sourceNameOrUrl) {
-    this.config.blockedSources.push(sourceNameOrUrl.toLowerCase());
-  }
-  /**
-   * Evaluate whether a candidate story passes publication policy rules.
-   */
-  evaluate(input) {
-    const blockingIssues = [];
-    if (!this.config.automatedPublishingEnabled && !input.force) {
-      return {
-        allowed: false,
-        reason: "KILL_SWITCH_DISABLED",
-        blockingIssues: ["Automated publishing is globally disabled (KILL_SWITCH_DISABLED)."]
-      };
-    }
-    const { story, validation, extraction } = input;
-    const rawCategory = (story.category || extraction.category || "").toLowerCase().trim();
-    const cleanCategory = rawCategory === "tech" ? "technology" : rawCategory;
-    const sources = input.sources || story.sources || [];
-    const primarySource = sources.find((s) => s.isPrimary || s.is_primary) || sources[0];
-    if (primarySource) {
-      const sourceName = (primarySource.name || "").toLowerCase();
-      const sourceUrl = (primarySource.url || "").toLowerCase();
-      const isBlocked = this.config.blockedSources.some(
-        (b) => sourceName.includes(b) || sourceUrl && sourceUrl.includes(b)
-      );
-      if (isBlocked) {
-        return {
-          allowed: false,
-          reason: "SOURCE_DISABLED",
-          blockingIssues: [`Source '${primarySource.name}' is blocked by publication policy.`]
-        };
-      }
-    }
-    const isSafe = this.config.safeAutomaticCategories.includes(cleanCategory);
-    const isReviewRequired = this.config.reviewRequiredCategories.includes(cleanCategory) || !isSafe;
-    if (isReviewRequired && !input.force) {
-      return {
-        allowed: false,
-        reason: "SENSITIVE_TOPIC",
-        blockingIssues: [
-          `Category '${cleanCategory}' is designated review-required and requires manual editorial sign-off.`
-        ]
-      };
-    }
-    const fullText = [
-      story.title || "",
-      story.summary || "",
-      story.dek || "",
-      ...story.quickSummary || [],
-      ...(extraction.sourceEvidence || []).map((c) => c.claim || "")
-    ].join(" ").toLowerCase();
-    const politicalPatterns = [
-      /\belection\b/i,
-      /\bpredicted winner\b/i,
-      /\blikely winner\b/i,
-      /\bpolling lead\b/i,
-      /\bvoter fraud\b/i,
-      /\bunverified allegations\b/i,
-      /\bpresidential debate\b/i,
-      /\bballot stuffing\b/i
-    ];
-    if (politicalPatterns.some((pattern) => pattern.test(fullText)) && !input.force) {
-      blockingIssues.push("Political/electoral claims detected. Routed to HOLD for human review.");
-      return {
-        allowed: false,
-        reason: "SENSITIVE_TOPIC",
-        blockingIssues
-      };
-    }
-    const healthPatterns = [
-      /\bmiracle cure\b/i,
-      /\bcures cancer\b/i,
-      /\bclinical diagnosis\b/i,
-      /\bguaranteed treatment\b/i,
-      /\bunproven therapy\b/i,
-      /\bmedical breakthrough cures\b/i
-    ];
-    if (healthPatterns.some((pattern) => pattern.test(fullText)) && !input.force) {
-      blockingIssues.push("Unverified medical/treatment claims detected. Routed to HOLD for editorial review.");
-      return {
-        allowed: false,
-        reason: "SENSITIVE_TOPIC",
-        blockingIssues
-      };
-    }
-    const financialPatterns = [
-      /\bguaranteed returns\b/i,
-      /\binvestment advice\b/i,
-      /\bbuy this stock now\b/i,
-      /\b100x return\b/i,
-      /\bmarket crash imminent\b/i,
-      /\brisk-free profit\b/i
-    ];
-    if (financialPatterns.some((pattern) => pattern.test(fullText)) && !input.force) {
-      blockingIssues.push("Financial advice or guaranteed returns detected. Routed to HOLD for human review.");
-      return {
-        allowed: false,
-        reason: "SENSITIVE_TOPIC",
-        blockingIssues
-      };
-    }
-    const disasterPatterns = [
-      /\bcasualties\b/i,
-      /\bdeath toll\b/i,
-      /\bmass shooting\b/i,
-      /\bterrorist attack\b/i,
-      /\bhostage situation\b/i,
-      /\bwar crimes\b/i,
-      /\bfatal crash\b/i
-    ];
-    if (disasterPatterns.some((pattern) => pattern.test(fullText)) && !input.force) {
-      blockingIssues.push("High-risk sensitive event (casualties/disaster/war) detected. Routed to HOLD.");
-      return {
-        allowed: false,
-        reason: "SENSITIVE_TOPIC",
-        blockingIssues
-      };
-    }
-    if (validation.sensitiveTopicFlags && validation.sensitiveTopicFlags.length > 0 && !input.force) {
-      blockingIssues.push(
-        `Validator flagged sensitive topics: ${validation.sensitiveTopicFlags.join(", ")}`
-      );
-      return {
-        allowed: false,
-        reason: "SENSITIVE_TOPIC",
-        blockingIssues
-      };
-    }
-    if (this.config.categorySwitches[cleanCategory] === false && !input.force) {
-      return {
-        allowed: false,
-        reason: "CATEGORY_DISABLED",
-        blockingIssues: [
-          `Automated publishing for category '${cleanCategory}' is explicitly disabled.`
-        ]
-      };
-    }
-    if (story.published_at || extraction.eventDate) {
-      const pubDate = new Date(story.published_at || extraction.eventDate || Date.now());
-      const ageHours = (Date.now() - pubDate.getTime()) / (1e3 * 60 * 60);
-      if (ageHours > this.config.maxBacklogAgeHours && !input.force) {
-        blockingIssues.push(
-          `Story date is ${Math.round(ageHours)}h old (exceeds ${this.config.maxBacklogAgeHours}h safety cutoff). Requires manual release.`
-        );
-        return {
-          allowed: false,
-          reason: "PUBLICATION_POLICY_BLOCK",
-          blockingIssues
-        };
-      }
-    }
-    return {
-      allowed: true,
-      reason: input.lifecycleDecision.action === "CREATE" ? "AUTO_PUBLISH_VALID_CREATE" : "AUTO_PUBLISH_VALID_UPDATE",
-      blockingIssues: []
-    };
-  }
-};
-
-// src/services/publishing/PublicationGateService.ts
-var PublicationGateService = class _PublicationGateService {
-  constructor(policyService) {
-    this.policyService = policyService || new PublicationPolicyService();
-  }
-  /**
-   * Generates a deterministic SHA-256 hash of the canonical publishable content.
-   */
-  static computeContentHash(story) {
-    const payload = JSON.stringify({
-      title: (story.title || "").trim(),
-      summary: (story.summary || story.dek || "").trim(),
-      category: (story.category || "").toLowerCase().trim(),
-      content: (story.content || []).map((b) => ({
-        type: b.type,
-        text: b.text || b.quote || "",
-        level: b.level
-      })),
-      facts: (story.facts || []).map((f) => ({
-        label: f.label,
-        value: f.value
-      }))
-    });
-    return createHash6("sha256").update(payload).digest("hex");
-  }
-  /**
-   * Evaluates all publication gates for an incoming candidate.
-   */
-  evaluate(input) {
-    const blockingIssues = [];
-    const publishableFields = [];
-    const { story, lifecycleDecision, validation, extraction } = input;
-    if (validation.status === "rejected") {
-      return {
-        decision: "REJECT",
-        reason: "VALIDATION_REJECTED",
-        blockingIssues: ["Candidate was rejected by validation engine (unverified/hallucinated content)."],
-        publishableFields: [],
-        publicationVersion: story.published_version || 1
-      };
-    }
-    if (validation.status === "insufficient_evidence") {
-      return {
-        decision: "HOLD",
-        reason: "LOW_EVIDENCE",
-        blockingIssues: ["Candidate has insufficient source evidence (<120 characters or missing facts)."],
-        publishableFields: [],
-        publicationVersion: story.published_version || 1
-      };
-    }
-    if (validation.status === "needs_review" && !input.force) {
-      return {
-        decision: "HOLD",
-        reason: "VALIDATION_REVIEW",
-        blockingIssues: ["Validation requires human editorial review before publication."],
-        publishableFields: [],
-        publicationVersion: story.published_version || 1
-      };
-    }
-    const hasCriticalIssues = (validation.issues || []).some(
-      (iss) => iss.severity === "critical"
-    );
-    if (hasCriticalIssues && !input.force) {
-      return {
-        decision: "REJECT",
-        reason: "VALIDATION_REJECTED",
-        blockingIssues: [
-          "Validation contains one or more critical issues: " + validation.issues.filter((i) => i.severity === "critical").map((i) => i.message).join("; ")
-        ],
-        publishableFields: [],
-        publicationVersion: story.published_version || 1
-      };
-    }
-    if (lifecycleDecision.action === "REJECT") {
-      return {
-        decision: "REJECT",
-        reason: "LIFECYCLE_HOLD_OR_REJECT",
-        blockingIssues: [`Lifecycle action is REJECT: ${lifecycleDecision.reason}`],
-        publishableFields: [],
-        publicationVersion: story.published_version || 1
-      };
-    }
-    if (lifecycleDecision.action === "HOLD" && !input.force) {
-      return {
-        decision: "HOLD",
-        reason: "LIFECYCLE_HOLD_OR_REJECT",
-        blockingIssues: [`Lifecycle action is HOLD: ${lifecycleDecision.reason}`],
-        publishableFields: [],
-        publicationVersion: story.published_version || 1
-      };
-    }
-    if (!story.title || story.title.trim().length < 10) {
-      blockingIssues.push("Title is missing or under 10 characters.");
-    } else {
-      publishableFields.push("title");
-    }
-    const summaryText = story.summary || story.dek || "";
-    if (!summaryText || summaryText.trim().length < 25) {
-      blockingIssues.push("Summary/dek is missing or under 25 characters.");
-    } else {
-      publishableFields.push("summary");
-    }
-    if (!story.category || story.category.trim().length === 0) {
-      blockingIssues.push("Category is missing.");
-    } else {
-      publishableFields.push("category");
-    }
-    if (!story.slug || story.slug.trim().length < 3) {
-      blockingIssues.push("Slug is missing or invalid.");
-    } else {
-      publishableFields.push("slug");
-    }
-    const pubDate = story.published_at || story.publishedAt;
-    if (!pubDate || isNaN(Date.parse(pubDate))) {
-      blockingIssues.push("Published timestamp is missing or malformed.");
-    } else {
-      publishableFields.push("publishedAt");
-    }
-    if (blockingIssues.length > 0) {
-      return {
-        decision: "HOLD",
-        reason: "MISSING_REQUIRED_FIELD",
-        blockingIssues,
-        publishableFields,
-        publicationVersion: story.published_version || 1
-      };
-    }
-    if (!story.content || !Array.isArray(story.content) || story.content.length === 0) {
-      return {
-        decision: "HOLD",
-        reason: "MALFORMED_CONTENT",
-        blockingIssues: ["Story content blocks are empty or not an array."],
-        publishableFields,
-        publicationVersion: story.published_version || 1
-      };
-    }
-    const hasSubstantiveBlock = story.content.some((b) => {
-      if (b.type === "paragraph" && b.text && b.text.trim().length >= 40) return true;
-      if (b.type === "quote" && b.quote && b.quote.trim().length >= 30) return true;
-      if (b.type === "callout" && b.text && b.text.trim().length >= 40) return true;
-      return false;
-    });
-    if (!hasSubstantiveBlock) {
-      return {
-        decision: "HOLD",
-        reason: "MALFORMED_CONTENT",
-        blockingIssues: ["Story content lacks at least one substantive article block (>=40 chars)."],
-        publishableFields,
-        publicationVersion: story.published_version || 1
-      };
-    }
-    const rawContentStr = JSON.stringify(story.content);
-    if (/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi.test(rawContentStr)) {
-      return {
-        decision: "REJECT",
-        reason: "MALFORMED_CONTENT",
-        blockingIssues: ["Raw script tags detected in article content."],
-        publishableFields,
-        publicationVersion: story.published_version || 1
-      };
-    }
-    publishableFields.push("content");
-    const allSources = input.sources || story.sources || [];
-    const hasValidSource = allSources.some(
-      (s) => s.name && s.name.trim().length > 0 && s.url && /^https?:\/\//i.test(s.url)
-    ) || extraction.sources && extraction.sources.some(
-      (s) => s.name && s.name.trim().length > 0 && s.url && /^https?:\/\//i.test(s.url)
-    );
-    if (!hasValidSource) {
-      return {
-        decision: "HOLD",
-        reason: "MISSING_SOURCE",
-        blockingIssues: ["No valid primary source with HTTP/HTTPS URL found."],
-        publishableFields,
-        publicationVersion: story.published_version || 1
-      };
-    }
-    publishableFields.push("sources");
-    if (story.image && !/^https?:\/\//i.test(story.image)) {
-      blockingIssues.push(`Hero image URL '${story.image}' is invalid. Will rely on fallback.`);
-    }
-    if (input.scheduledFor) {
-      const scheduleTime = Date.parse(input.scheduledFor);
-      if (!isNaN(scheduleTime) && scheduleTime > Date.now()) {
-        return {
-          decision: "HOLD",
-          reason: "SCHEDULED_FUTURE",
-          blockingIssues: [
-            `Story is scheduled for future publication at ${new Date(scheduleTime).toISOString()}`
-          ],
-          publishableFields,
-          publicationVersion: story.published_version || 1
-        };
-      }
-    }
-    const policyResult = this.policyService.evaluate(input);
-    if (!policyResult.allowed) {
-      return {
-        decision: "HOLD",
-        reason: policyResult.reason,
-        blockingIssues: policyResult.blockingIssues,
-        publishableFields,
-        publicationVersion: story.published_version || 1
-      };
-    }
-    const contentHash = _PublicationGateService.computeContentHash(story);
-    const targetVersion = lifecycleDecision.action === "UPDATE" ? (story.published_version || 1) + 1 : story.published_version || 1;
-    return {
-      decision: "PUBLISH",
-      reason: lifecycleDecision.action === "CREATE" ? "AUTO_PUBLISH_VALID_CREATE" : "AUTO_PUBLISH_VALID_UPDATE",
-      blockingIssues: [],
-      publishableFields,
-      publicationVersion: targetVersion,
-      contentHash
-    };
   }
 };
 
@@ -13135,6 +13367,38 @@ export {
  *
  * The Meridian — Global News Platform
  * Canonical Category Taxonomy & Normalization Layer
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Centralized Word Count & Article Body Integrity Utility
+ * The Meridian — Global News Platform
+ *
+ * Enforces deterministic word count calculations for the 700-word minimum policy.
+ *
+ * Counting Rules:
+ * 1. WHAT COUNTS:
+ *    - Substantive body paragraphs (type === 'paragraph')
+ *    - Article headings that are part of the body prose structure (type === 'heading')
+ *    - Callout text (type === 'callout')
+ *    - List items (type === 'list')
+ *    - Substantive quotes in article body (type === 'quote')
+ *
+ * 2. WHAT DOES NOT COUNT:
+ *    - Headline / title
+ *    - Subtitle / dek / summary / excerpt / quickSummary
+ *    - Image captions and image credits (type === 'image' is strictly excluded)
+ *    - Author names, timestamps, tags, categories, topics
+ *    - UI chrome, navigation, breadcrumbs, buttons
+ *    - Raw HTML markup, markdown syntax, or boilerplate
+ *
+ * 3. TOKENIZATION:
+ *    - HTML tags stripped
+ *    - Markdown formatting tokens stripped
+ *    - Normalized Unicode whitespace
+ *    - Real word tokens matching letters/numbers (\p{L}\p{N})
+ *    - Deterministic across all environments
  */
 /**
  * @license

@@ -23,6 +23,12 @@ import {
   type PlatformCategory,
 } from './categoryTaxonomy';
 
+import {
+  countArticleBodyWords,
+  detectFillerText,
+  MIN_ARTICLE_BODY_WORDS,
+} from '../../utils/wordCount';
+
 export {
   normalizeCategory,
   PLATFORM_CATEGORIES,
@@ -529,3 +535,33 @@ export function checkSourceSufficiency(sourceText?: string | null): {
     length,
   };
 }
+
+/**
+ * 10. Article Length Validation (700-Word Minimum Policy)
+ * Checks whether the final article body contains at least minWords (default 700).
+ * There is NO maximum word count (no ceiling).
+ */
+export function validateArticleLength(
+  contentBlocks: any[],
+  minWords: number = MIN_ARTICLE_BODY_WORDS
+): {
+  valid: boolean;
+  wordCount: number;
+  minWords: number;
+  remainingWordsNeeded: number;
+} {
+  const wordCount = countArticleBodyWords(contentBlocks);
+  return {
+    valid: wordCount >= minWords,
+    wordCount,
+    minWords,
+    remainingWordsNeeded: Math.max(0, minWords - wordCount),
+  };
+}
+
+export {
+  countArticleBodyWords,
+  detectFillerText,
+  MIN_ARTICLE_BODY_WORDS,
+};
+

@@ -26,8 +26,12 @@ import {
   detectSensitiveTopics,
   checkOriginality,
   checkSourceSufficiency,
+  countArticleBodyWords,
+  detectFillerText,
+  MIN_ARTICLE_BODY_WORDS,
 } from './deterministicValidators';
 import type { ValidationRepository } from '../../data/repositories/ValidationRepository';
+import { PublicationGateService } from '../publishing/PublicationGateService';
 
 export const CURRENT_VALIDATOR_VERSION = 'v1.0.0-independent-quality-gate';
 
@@ -37,11 +41,13 @@ export interface ValidationInput {
   sourceUrl?: string;
   discoveryTitle?: string;
   publishedAt?: string | null;
+  enforceArticleLength?: boolean;
 }
 
 export interface ValidationEngineOptions {
   repository?: ValidationRepository;
   validatorVersion?: string;
+  enforceArticleLength?: boolean;
 }
 
 /**
@@ -54,10 +60,12 @@ export interface ValidationEngineOptions {
 export class ValidationEngine {
   private repository?: ValidationRepository;
   private validatorVersion: string;
+  private enforceArticleLength: boolean;
 
   constructor(options: ValidationEngineOptions = {}) {
     this.repository = options.repository;
     this.validatorVersion = options.validatorVersion || CURRENT_VALIDATOR_VERSION;
+    this.enforceArticleLength = options.enforceArticleLength ?? false;
   }
 
   /**
@@ -73,9 +81,11 @@ export class ValidationEngine {
    */
   public async validate(
     input: ValidationInput,
-    options: { dryRun?: boolean; forceRerun?: boolean } = {}
+    options: { dryRun?: boolean; forceRerun?: boolean; enforceArticleLength?: boolean } = {}
   ): Promise<NewsValidationResult> {
     const { extraction, sourceText } = input;
+    const enforceLength =
+      options.enforceArticleLength ?? input.enforceArticleLength ?? this.enforceArticleLength ?? false;
     const now = new Date().toISOString();
 
     // Normalize extraction fields
@@ -153,6 +163,14 @@ export class ValidationEngine {
         sensitiveTopicFlags: [],
         validatorVersion: this.validatorVersion,
         inputHash,
+        contentHash: PublicationGateService.computeContentHash({
+          title,
+          summary,
+          category,
+          content: contentBlocks,
+          facts,
+        }),
+        articleBodyWordCount: countArticleBodyWords(contentBlocks),
         createdAt: now,
         updatedAt: now,
       };
@@ -316,6 +334,36 @@ export class ValidationEngine {
       validatedFields.title = 'needs_review';
     }
 
+    // 11b. Article Length & Filler Inspection (700-Word Minimum Policy)
+    const bodyWordCount = countArticleBodyWords(contentBlocks);
+    if (enforceLength) {
+      if (bodyWordCount < MIN_ARTICLE_BODY_WORDS) {
+        issues.push({
+          code: 'INSUFFICIENT_ARTICLE_LENGTH',
+          severity: 'error',
+          field: 'content',
+          message: `Article body has ${bodyWordCount} words, which is below the ${MIN_ARTICLE_BODY_WORDS}-word minimum policy (requires >= ${MIN_ARTICLE_BODY_WORDS} substantive words).`,
+          evidence: `Word count: ${bodyWordCount} / ${MIN_ARTICLE_BODY_WORDS}`,
+          createdAt: now,
+        });
+        validatedFields.content = 'needs_review';
+        rejectedFields.push('content');
+      }
+
+      const fillerCheck = detectFillerText(contentBlocks);
+      if (fillerCheck.hasFiller) {
+        issues.push({
+          code: 'FILLER_PADDING_DETECTED',
+          severity: 'error',
+          field: 'content',
+          message: fillerCheck.reason || 'Article body contains repetitive filler or padding phrases.',
+          createdAt: now,
+        });
+        validatedFields.content = 'needs_review';
+        rejectedFields.push('content');
+      }
+    }
+
     // 12. Calculate Claim Coverage & Source Coverage
     const totalClaims = Math.max(1, facts.length + entities.length + summaryPoints.length);
     const passedClaims =
@@ -361,6 +409,14 @@ export class ValidationEngine {
 
     const validationId = `val_${createHash('md5').update(`${extractionId}_${inputHash}`).digest('hex').substring(0, 16)}`;
 
+    const contentHash = PublicationGateService.computeContentHash({
+      title,
+      summary,
+      category,
+      content: contentBlocks,
+      facts,
+    });
+
     const result: NewsValidationResult = {
       id: validationId,
       extractionId,
@@ -380,6 +436,8 @@ export class ValidationEngine {
       sensitiveTopicFlags: sensitiveFlags,
       validatorVersion: this.validatorVersion,
       inputHash,
+      contentHash,
+      articleBodyWordCount: bodyWordCount,
       createdAt: now,
       updatedAt: now,
     };
@@ -391,4 +449,14 @@ export class ValidationEngine {
 
     return result;
   }
+
+  /**
+   * Verifies that candidate or story content has not mutated since validation.
+   */
+  public static verifyContentIntegrity(storyOrCandidate: any, validatedHash?: string | null): boolean {
+    if (!validatedHash) return false;
+    const currentHash = PublicationGateService.computeContentHash(storyOrCandidate);
+    return currentHash === validatedHash;
+  }
 }
+

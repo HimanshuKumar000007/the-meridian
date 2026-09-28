@@ -29,7 +29,8 @@
     "media:run": "tsx scripts/run-media-processing.ts",
     "media:audit": "tsx scripts/audit-media.ts",
     "media:test": "tsx test-media-engine.ts",
-    "notification:test": "tsx test-operator-notifications.ts"
+    "notification:test": "tsx test-operator-notifications.ts",
+    "policy:test": "tsx test-article-length-policy.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

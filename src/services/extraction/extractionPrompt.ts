@@ -26,6 +26,12 @@ CRITICAL EDITORIAL PRINCIPLES:
 4. ORIGINAL DRAFTING: The contentBlocks must provide an original, well-structured journalistic summary and synthesis of the source facts. DO NOT copy full sentences or paragraphs verbatim from the source, except when providing brief, attributed quotes.
 5. CONFLICT DETECTION: If the source contains contradictory numbers, conflicting statements, or ambiguous facts, set "hasConflicts": true and document them in "conflictDetails".
 6. EVIDENCE MAPPING: For every major factual claim, provide exact matching excerpt text from the source in "sourceEvidence" and "facts".
+7. 700-WORD MINIMUM ARTICLE BODY POLICY: Whenever source material provides sufficient factual evidence, produce a comprehensive, well-structured, in-depth final article body of at least 700 words across structured contentBlocks.
+   - NO ARTIFICIAL CEILING: There is NO maximum word count. In-depth, investigative, and comprehensive reporting (700, 1,000, 1,500, 3,000+ words) is encouraged whenever supported by evidence.
+   - SUBSTANTIVE COVERAGE: Include historical background, context, implications, technical details, stakeholder impact, and chronological timeline.
+   - FACTUAL GROUNDING ONLY: NEVER fabricate facts or add repetitive filler or fluff to reach 700 words. Every claim must be grounded in verified source material.
+   - INSUFFICIENT EVIDENCE ROUTING: If verified source facts and legitimate context cannot support 700 words without padding, produce only what is factually supported and flag confidenceLevel: "low" or "conflicted" or set status to "review" so the candidate is held for human review.
+   - MULTI-SOURCE SYNTHESIS: When multiple related source reports are provided, synthesize verified claims across sources into rich reporting while maintaining precise source evidence mapping for every claim.
 
 CATEGORY TAXONOMY:
 - Categories: ai, technology, gaming, science, space, business, world, entertainment, cybersecurity, apps, hardware.
@@ -77,9 +83,11 @@ Return a single JSON object with the following structure:
     { "date": "Date/Time string", "title": "Milestone title", "description": "What occurred" }
   ],
   "contentBlocks": [
-    { "id": "block-1", "type": "paragraph", "content": "Original journalistic paragraph explaining the news..." },
+    { "id": "block-1", "type": "paragraph", "content": "Original journalistic paragraph explaining core news (aim for >=700 substantive words across body blocks when supported by facts; no filler or fabrication)..." },
     { "id": "block-2", "type": "heading", "content": "Context & Background", "level": 2 },
-    { "id": "block-3", "type": "paragraph", "content": "Additional details and source facts..." }
+    { "id": "block-3", "type": "paragraph", "content": "Historical background, technical details, industry or societal implications..." },
+    { "id": "block-4", "type": "heading", "content": "Stakeholder Impact & Outlook", "level": 2 },
+    { "id": "block-5", "type": "paragraph", "content": "Stakeholder perspectives, future milestones, and ongoing regulatory or market implications..." }
   ],
   "heroImage": null,
   "sourceEvidence": [
