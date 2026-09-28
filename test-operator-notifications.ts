@@ -375,6 +375,150 @@ async function runOperatorNotificationsTestSuite() {
     assert(genericText.includes('Reason:\nSensory measurement variance'), 'Test 11i: Generic webhook reason formatted');
     assert(genericText.includes('Story ID:\nstory-fmt-01'), 'Test 11j: Generic webhook story ID formatted');
 
+    // --- 12. Discord Operator Channel Verification (Requirements 6-11) ---
+    console.log('\n--- 11. Discord Operator Channel Verification (Requirements 6-11) ---');
+    receivedRequests = [];
+
+    // Configure Discord provider with mock endpoint returning Discord 204 No Content
+    serverHandler = (req, res) => {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        let parsed = {};
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          parsed = { raw };
+        }
+        receivedRequests.push({
+          method: req.method || 'GET',
+          url: req.url || '/',
+          headers: req.headers,
+          body: parsed,
+        });
+        res.writeHead(204); // Standard Discord webhook success status
+        res.end();
+      });
+    };
+
+    process.env.REVIEW_NOTIFICATIONS_ENABLED = 'true';
+    process.env.REVIEW_NOTIFICATION_PROVIDER = 'discord';
+    process.env.REVIEW_NOTIFICATION_WEBHOOK_URL = mockWebhookUrl;
+
+    const discordConfigService = new NotificationConfigService();
+    const discordStateRepo = new MemoryReviewNotificationStateRepository();
+    const discordOperatorService = new OperatorNotificationService({
+      configService: discordConfigService,
+      stateRepository: discordStateRepo,
+    });
+
+    const controlledCandidateTime = new Date().toISOString();
+    const discordReviewResult = await discordOperatorService.notifyReviewRequired({
+      storyId: 'story-discord-controlled-01',
+      headline: 'Breakthrough Fusion Reaction Yields Net Energy in Joint Lab Run',
+      source: 'src-nature-science',
+      reason: 'Quantitative variance in energy yield metric flags editorial confirmation',
+      category: 'science',
+      validationStatus: 'needs_review',
+      validationId: 'val-discord-controlled-01',
+      timestamp: controlledCandidateTime,
+      issues: [
+        { code: 'NUMBER_MISMATCH', message: 'Energy gain factor 1.25 exceeds verified source range 1.15' },
+      ],
+    });
+
+    assert(discordReviewResult.notified === true, 'Test 12a: needs_review triggers Discord operator notification');
+    assert(discordReviewResult.success === true, 'Test 12b: Discord webhook returns success (HTTP 204)');
+    assert(receivedRequests.length === 1, 'Test 12c: Discord webhook received exactly ONE notification');
+
+    const receivedDiscordReq = receivedRequests[0];
+    const embed = receivedDiscordReq.body.embeds?.[0];
+    assert(embed !== undefined, 'Test 12d: Discord body contains rich embed');
+    assert(embed.title === 'Breakthrough Fusion Reaction Yields Net Energy in Joint Lab Run', 'Test 12e: Notification contains headline');
+    assert(embed.fields?.find((f: any) => f.name === 'Source')?.value === 'src-nature-science', 'Test 12f: Notification contains source');
+    assert(embed.fields?.find((f: any) => f.name === 'Reason')?.value?.includes('Quantitative variance'), 'Test 12g: Notification contains reason');
+    assert(embed.fields?.find((f: any) => f.name === 'Category')?.value === 'science', 'Test 12h: Notification contains category');
+    assert(embed.fields?.find((f: any) => f.name === 'Story ID')?.value?.includes('story-discord-controlled-01'), 'Test 12i: Notification contains story ID');
+    assert(embed.fields?.find((f: any) => f.name === 'Review URL')?.value?.includes('/review/val-discord-controlled-01'), 'Test 12j: Notification contains review URL');
+    assert(embed.timestamp === controlledCandidateTime, 'Test 12k: Notification contains timestamp');
+
+    // Trigger same review state again -> verify NO duplicate notification is sent
+    const discordDupResult = await discordOperatorService.notifyReviewRequired({
+      storyId: 'story-discord-controlled-01',
+      headline: 'Breakthrough Fusion Reaction Yields Net Energy in Joint Lab Run',
+      source: 'src-nature-science',
+      reason: 'Quantitative variance in energy yield metric flags editorial confirmation',
+      category: 'science',
+      validationStatus: 'needs_review',
+      validationId: 'val-discord-controlled-01',
+      timestamp: controlledCandidateTime,
+      issues: [
+        { code: 'NUMBER_MISMATCH', message: 'Energy gain factor 1.25 exceeds verified source range 1.15' },
+      ],
+    });
+
+    assert(discordDupResult.notified === false, 'Test 12l: Duplicate review state suppresses notification');
+    assert(discordDupResult.skipReason === 'DUPLICATE_REVIEW_STATE', 'Test 12m: Skip reason is DUPLICATE_REVIEW_STATE');
+    assert(receivedRequests.length === 1, 'Test 12n: Exactly ONE request remains dispatched (no duplicate sent)');
+
+    // Verify non-review statuses do NOT create notifications: valid, rejected, insufficient_evidence
+    const resValid = await discordOperatorService.notifyReviewRequired({
+      storyId: 'story-discord-valid-01',
+      headline: 'Valid Astronomical Observation',
+      source: 'src-space-news',
+      reason: 'Validation gate passed',
+      category: 'space',
+      validationStatus: 'valid',
+    });
+    assert(resValid.notified === false, 'Test 12o: valid status does not create Discord notification');
+
+    const resRejected = await discordOperatorService.notifyReviewRequired({
+      storyId: 'story-discord-rejected-01',
+      headline: 'Fabricated Speculation',
+      source: 'src-unreliable',
+      reason: 'Validation gate rejected candidate',
+      category: 'tech',
+      validationStatus: 'rejected',
+    });
+    assert(resRejected.notified === false, 'Test 12p: rejected status does not create Discord notification');
+
+    const resInsufficient = await discordOperatorService.notifyReviewRequired({
+      storyId: 'story-discord-insufficient-01',
+      headline: 'Short Snippet Under 120 Characters',
+      source: 'src-short-snippet',
+      reason: 'Source text under 120 chars',
+      category: 'general',
+      validationStatus: 'insufficient_evidence',
+    });
+    assert(resInsufficient.notified === false, 'Test 12q: insufficient_evidence status does not create Discord notification');
+    assert(receivedRequests.length === 1, 'Test 12r: Request count strictly unchanged after non-review statuses');
+
+    // Verify webhook failure does not stop the news pipeline
+    serverHandler = (req, res) => {
+      res.writeHead(500);
+      res.end(JSON.stringify({ message: 'Discord Internal Server Error' }));
+    };
+
+    const failingDiscordEngine = new StoryLifecycleEngine(new MockLifecycleRepository(), {
+      lifecycleVersion: CURRENT_LIFECYCLE_VERSION,
+      notificationService: discordOperatorService,
+    });
+
+    const testFailCandidate = makeTestCandidate({
+      id: 'ext-discord-fail-01',
+      title: 'Story Processing Continues Safely',
+      category: 'technology',
+    });
+    const testFailValidation = makeTestValidation({
+      id: 'val-discord-fail-01',
+      extractionId: 'ext-discord-fail-01',
+      status: 'needs_review',
+    });
+
+    const failSafeDecision = await failingDiscordEngine.processCandidate(testFailCandidate, testFailValidation);
+    assert(failSafeDecision.action === 'HOLD', 'Test 12s: News pipeline safely produces HOLD on Discord failure');
+    assert(failSafeDecision.validationId === 'val-discord-fail-01', 'Test 12t: Validation metadata intact on failure');
+
   } finally {
     // Restore environment
     process.env.REVIEW_NOTIFICATIONS_ENABLED = 'false';

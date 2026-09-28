@@ -29,7 +29,10 @@ export class NotificationConfigService {
       rawProvider === 'slack' ? 'slack' : rawProvider === 'discord' ? 'discord' : 'webhook';
 
     const enabled = this.parseBool(process.env.REVIEW_NOTIFICATIONS_ENABLED, false);
-    const webhookUrl = process.env.REVIEW_NOTIFICATION_WEBHOOK_URL?.trim();
+    const webhookUrl = (
+      process.env.REVIEW_NOTIFICATION_WEBHOOK_URL ||
+      process.env.DISCORD_WEBHOOK_URL
+    )?.trim();
     const timeoutMs = this.parseInt(process.env.REVIEW_NOTIFICATION_TIMEOUT_MS, 5000, 500, 30000);
     const maxRetries = this.parseInt(process.env.REVIEW_NOTIFICATION_MAX_RETRIES, 2, 0, 5);
     const baseUrl = (process.env.REVIEW_NOTIFICATION_BASE_URL || process.env.SITE_URL || 'https://the-meridian.news')

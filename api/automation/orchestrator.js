@@ -5670,7 +5670,7 @@ var NotificationConfigService = class {
     const rawProvider = (process.env.REVIEW_NOTIFICATION_PROVIDER || "webhook").toLowerCase().trim();
     const provider = rawProvider === "slack" ? "slack" : rawProvider === "discord" ? "discord" : "webhook";
     const enabled = this.parseBool(process.env.REVIEW_NOTIFICATIONS_ENABLED, false);
-    const webhookUrl = process.env.REVIEW_NOTIFICATION_WEBHOOK_URL?.trim();
+    const webhookUrl = (process.env.REVIEW_NOTIFICATION_WEBHOOK_URL || process.env.DISCORD_WEBHOOK_URL)?.trim();
     const timeoutMs = this.parseInt(process.env.REVIEW_NOTIFICATION_TIMEOUT_MS, 5e3, 500, 3e4);
     const maxRetries = this.parseInt(process.env.REVIEW_NOTIFICATION_MAX_RETRIES, 2, 0, 5);
     const baseUrl = (process.env.REVIEW_NOTIFICATION_BASE_URL || process.env.SITE_URL || "https://the-meridian.news").trim().replace(/\/+$/, "");
