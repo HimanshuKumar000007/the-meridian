@@ -1,7 +1,8 @@
 /**
  * @license
- * SPDX-License-Identifier: Apache-2.0
  */
+
+import type { MediaAsset } from './media';
 
 /**
  * Editorial presentation status for visual badges
@@ -179,6 +180,9 @@ export interface NewsStory {
   caption?: string;
   credit?: string;
   heroImage?: StoryHeroImage;
+  heroMediaId?: string;
+  heroMedia?: MediaAsset;
+  mediaGallery?: MediaAsset[];
 
   quickSummary?: string[]; // 3-5 concise bullet points
 
@@ -224,7 +228,14 @@ export interface NewsStory {
   updated_at?: string;
   created_at?: string;
   hero_image?: StoryHeroImage;
+  hero_image_url?: string;
+  hero_image_alt?: string;
+  hero_image_caption?: string;
+  hero_image_credit?: string;
+  hero_media_id?: string;
   reading_time_minutes?: number;
+  reading_time?: number;
+  importance_score?: number;
 }
 
 export type Story = NewsStory;

@@ -9113,7 +9113,10 @@ var RssFeedService = class _RssFeedService {
       const authorName = s.author?.name || "The Meridian Editorial Staff";
       const categoryName = s.category || "News";
       const cleanTitle = (s.title || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      const cleanSummary = (s.summary || s.dek || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const cleanSummary = (s.summary || s.dek || "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+      const heroImgUrl = s.heroMedia?.storageUrl || s.hero_image_url || s.image || s.heroImage?.url;
+      const enclosureXml = heroImgUrl ? `
+      <enclosure url="${heroImgUrl.replace(/&/g, "&amp;")}" type="image/jpeg" length="0" />` : "";
       return `    <item>
       <title>${cleanTitle}</title>
       <link>${storyUrl}</link>
@@ -9121,7 +9124,7 @@ var RssFeedService = class _RssFeedService {
       <description>${cleanSummary}</description>
       <category>${categoryName}</category>
       <author>${authorName}</author>
-      <pubDate>${pubDate}</pubDate>
+      <pubDate>${pubDate}</pubDate>${enclosureXml}
     </item>`;
     }).join("\n");
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -10110,6 +10113,7 @@ var HealthCheckService = class {
       validationHealth,
       lifecycleHealth,
       publishingHealth,
+      mediaHealth,
       schedulerHealth,
       lockHealth,
       searchHealth,
@@ -10120,6 +10124,7 @@ var HealthCheckService = class {
       this.checkValidationHealth(queues),
       this.checkLifecycleHealth(queues),
       this.checkPublishingHealth(queues),
+      this.checkMediaHealth(queues),
       this.checkSchedulerHealth(),
       this.checkLockHealth(),
       this.checkSearchHealth(),
@@ -10148,6 +10153,7 @@ var HealthCheckService = class {
       validation: validationHealth,
       lifecycle: lifecycleHealth,
       publishing: publishingHealth,
+      media: mediaHealth,
       scheduler: schedulerHealth,
       locks: lockHealth,
       sitemap: sitemapHealth,
@@ -10634,6 +10640,35 @@ var HealthCheckService = class {
     };
   }
   /**
+   * Check Media Engine Health
+   */
+  async checkMediaHealth(queues) {
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const pendingCount = queues.media ?? 0;
+    const isWarn = pendingCount >= 50;
+    const isCritical = pendingCount >= 200;
+    let status = "healthy";
+    let message = `Media engine healthy (${pendingCount} queued).`;
+    if (isCritical) {
+      status = "failed";
+      message = `CRITICAL: Media processing queue backlog excessive (${pendingCount} items).`;
+    } else if (isWarn) {
+      status = "degraded";
+      message = `Warning: Media processing queue growing (${pendingCount} items).`;
+    }
+    return {
+      service: "media",
+      status,
+      lastCheckedAt: nowIso,
+      lastSuccessAt: status === "healthy" ? nowIso : void 0,
+      responseTimeMs: 0,
+      consecutiveFailures: 0,
+      errorCode: isWarn ? "MEDIA_QUEUE_GROWING" : null,
+      message,
+      metadata: { pendingCount, oldestItemSec: queues.oldestPendingItemAge.mediaSec }
+    };
+  }
+  /**
    * Check Scheduler & GitHub Actions Orchestrator Staleness
    */
   async checkSchedulerHealth() {
@@ -10920,6 +10955,7 @@ var HealthCheckService = class {
       validation: 0,
       lifecycle: 0,
       publication: 0,
+      media: 0,
       oldestPendingItemAge: {}
     };
     if (!this.client) return defaultQueues;
@@ -10943,6 +10979,14 @@ var HealthCheckService = class {
       }
       const { count: valCount } = await this.client.from("news_extractions").select("*", { count: "exact", head: true }).eq("status", "completed");
       defaultQueues.validation = Math.max(0, (valCount || 0) - 2);
+      const { data: mediaItems, count: mediaCount } = await this.client.from("media_processing_queue").select("created_at", { count: "exact" }).eq("status", "pending").order("created_at", { ascending: true }).limit(1);
+      defaultQueues.media = mediaCount || 0;
+      if (mediaItems && mediaItems.length > 0 && mediaItems[0].created_at) {
+        defaultQueues.oldestPendingItemAge.mediaSec = Math.max(
+          0,
+          Math.floor((now - new Date(mediaItems[0].created_at).getTime()) / 1e3)
+        );
+      }
       return defaultQueues;
     } catch {
       return defaultQueues;
@@ -11048,6 +11092,24 @@ var AlertEngine = class {
         severity: "critical",
         message: website.message || "Public homepage is unavailable.",
         metadata: { responseTimeMs: website.responseTimeMs }
+      });
+    }
+    const media = services.media;
+    if (media && media.errorCode) {
+      conditions.push({
+        code: media.errorCode,
+        service: "media",
+        severity: media.status === "failed" ? "critical" : "warning",
+        message: media.message || "Media engine alert condition detected.",
+        metadata: media.metadata
+      });
+    } else if (queues.media !== void 0 && queues.media > 25) {
+      conditions.push({
+        code: "MEDIA_QUEUE_GROWING",
+        service: "media",
+        severity: queues.media > 50 ? "critical" : "warning",
+        message: `Media processing queue backlog elevated (${queues.media} pending items).`,
+        metadata: { queueDepth: queues.media }
       });
     }
     return conditions;

@@ -79,6 +79,7 @@ export class HealthCheckService {
       validationHealth,
       lifecycleHealth,
       publishingHealth,
+      mediaHealth,
       schedulerHealth,
       lockHealth,
       searchHealth,
@@ -89,6 +90,7 @@ export class HealthCheckService {
       this.checkValidationHealth(queues),
       this.checkLifecycleHealth(queues),
       this.checkPublishingHealth(queues),
+      this.checkMediaHealth(queues),
       this.checkSchedulerHealth(),
       this.checkLockHealth(),
       this.checkSearchHealth(),
@@ -122,6 +124,7 @@ export class HealthCheckService {
       validation: validationHealth,
       lifecycle: lifecycleHealth,
       publishing: publishingHealth,
+      media: mediaHealth,
       scheduler: schedulerHealth,
       locks: lockHealth,
       sitemap: sitemapHealth,
@@ -684,6 +687,39 @@ export class HealthCheckService {
   }
 
   /**
+   * Check Media Engine Health
+   */
+  public async checkMediaHealth(queues: QueueDepthMetrics): Promise<ServiceHealth> {
+    const nowIso = new Date().toISOString();
+    const pendingCount = queues.media ?? 0;
+    const isWarn = pendingCount >= 50;
+    const isCritical = pendingCount >= 200;
+
+    let status: HealthStatus = 'healthy';
+    let message = `Media engine healthy (${pendingCount} queued).`;
+
+    if (isCritical) {
+      status = 'failed';
+      message = `CRITICAL: Media processing queue backlog excessive (${pendingCount} items).`;
+    } else if (isWarn) {
+      status = 'degraded';
+      message = `Warning: Media processing queue growing (${pendingCount} items).`;
+    }
+
+    return {
+      service: 'media',
+      status,
+      lastCheckedAt: nowIso,
+      lastSuccessAt: status === 'healthy' ? nowIso : undefined,
+      responseTimeMs: 0,
+      consecutiveFailures: 0,
+      errorCode: isWarn ? 'MEDIA_QUEUE_GROWING' : null,
+      message,
+      metadata: { pendingCount, oldestItemSec: queues.oldestPendingItemAge.mediaSec },
+    };
+  }
+
+  /**
    * Check Scheduler & GitHub Actions Orchestrator Staleness
    */
   public async checkSchedulerHealth(): Promise<ServiceHealth> {
@@ -1029,6 +1065,7 @@ export class HealthCheckService {
       validation: 0,
       lifecycle: 0,
       publication: 0,
+      media: 0,
       oldestPendingItemAge: {},
     };
 
@@ -1075,6 +1112,22 @@ export class HealthCheckService {
         .select('*', { count: 'exact', head: true })
         .eq('status', 'completed');
       defaultQueues.validation = Math.max(0, (valCount || 0) - 2);
+
+      // 4. Media Processing Queue
+      const { data: mediaItems, count: mediaCount } = await this.client
+        .from('media_processing_queue')
+        .select('created_at', { count: 'exact' })
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      defaultQueues.media = mediaCount || 0;
+      if (mediaItems && mediaItems.length > 0 && mediaItems[0].created_at) {
+        defaultQueues.oldestPendingItemAge.mediaSec = Math.max(
+          0,
+          Math.floor((now - new Date(mediaItems[0].created_at).getTime()) / 1000)
+        );
+      }
 
       return defaultQueues;
     } catch {

@@ -69,6 +69,7 @@ export class SeoService {
     updated_at?: string;
     image?: string;
     heroImage?: { url?: string; alt?: string; caption?: string; credit?: string };
+    heroMedia?: { storageUrl?: string; derivatives?: { openGraph?: { url?: string } } };
     hero_image_url?: string;
     author?: { name?: string; role?: string; avatar?: string };
   }): SeoMetaResult {
@@ -78,8 +79,10 @@ export class SeoService {
     const publishedDate = story.publishedAt || story.published_at || new Date().toISOString();
     const modifiedDate = story.updatedAt || story.updated_at || publishedDate;
 
-    // Resolve primary image URL
+    // Resolve primary image URL (prefers approved heroMedia derivative, then standard fields)
     let imageUrl =
+      story.heroMedia?.derivatives?.openGraph?.url ||
+      story.heroMedia?.storageUrl ||
       story.image ||
       story.heroImage?.url ||
       story.hero_image_url ||

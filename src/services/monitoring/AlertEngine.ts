@@ -131,6 +131,26 @@ export class AlertEngine {
       });
     }
 
+    // 8. Media Processing Health
+    const media = services.media;
+    if (media && media.errorCode) {
+      conditions.push({
+        code: media.errorCode,
+        service: 'media',
+        severity: media.status === 'failed' ? 'critical' : 'warning',
+        message: media.message || 'Media engine alert condition detected.',
+        metadata: media.metadata,
+      });
+    } else if (queues.media !== undefined && queues.media > 25) {
+      conditions.push({
+        code: 'MEDIA_QUEUE_GROWING',
+        service: 'media',
+        severity: queues.media > 50 ? 'critical' : 'warning',
+        message: `Media processing queue backlog elevated (${queues.media} pending items).`,
+        metadata: { queueDepth: queues.media },
+      });
+    }
+
     return conditions;
   }
 

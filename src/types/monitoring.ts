@@ -26,7 +26,12 @@ export type OperationalErrorCode =
   | 'QUEUE_GROWING'
   | 'PUBLICATION_RATE_ANOMALY'
   | 'SITE_UNAVAILABLE'
-  | 'FEED_MALFORMED';
+  | 'FEED_MALFORMED'
+  | 'MEDIA_QUEUE_GROWING'
+  | 'MEDIA_DOWNLOAD_FAILURE'
+  | 'MEDIA_GENERATION_FAILURE'
+  | 'MEDIA_STORAGE_FAILURE'
+  | 'MEDIA_PROCESSING_STALE';
 
 export interface ServiceHealth {
   service: string;
@@ -63,12 +68,14 @@ export interface QueueDepthMetrics {
   validation: number;
   lifecycle: number;
   publication: number;
+  media?: number;
   oldestPendingItemAge: {
     discoverySec?: number;
     extractionSec?: number;
     validationSec?: number;
     lifecycleSec?: number;
     publicationSec?: number;
+    mediaSec?: number;
   };
 }
 

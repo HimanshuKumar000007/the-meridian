@@ -43,7 +43,10 @@ export class RssFeedService {
         const cleanSummary = (s.summary || s.dek || '')
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
+        const heroImgUrl = s.heroMedia?.storageUrl || s.hero_image_url || s.image || s.heroImage?.url;
+        const enclosureXml = heroImgUrl
+          ? `\n      <enclosure url="${heroImgUrl.replace(/&/g, '&amp;')}" type="image/jpeg" length="0" />`
+          : '';
 
         return `    <item>
       <title>${cleanTitle}</title>
@@ -52,7 +55,7 @@ export class RssFeedService {
       <description>${cleanSummary}</description>
       <category>${categoryName}</category>
       <author>${authorName}</author>
-      <pubDate>${pubDate}</pubDate>
+      <pubDate>${pubDate}</pubDate>${enclosureXml}
     </item>`;
       })
       .join('\n');
