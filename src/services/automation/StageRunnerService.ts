@@ -29,6 +29,11 @@ import { SourceContentAcquisitionService } from '../extraction/SourceContentAcqu
 import { StoryLifecycleEngine, CURRENT_LIFECYCLE_VERSION } from '../lifecycle/StoryLifecycleEngine';
 import { SupabaseLifecycleRepository } from '../../data/repositories/SupabaseLifecycleRepository';
 import { MockLifecycleRepository } from '../../data/repositories/MockLifecycleRepository';
+import {
+  OperatorNotificationService,
+  SupabaseReviewNotificationStateRepository,
+  MemoryReviewNotificationStateRepository,
+} from '../notification';
 
 import { PublicationEngine } from '../publishing/PublicationEngine';
 import { PublicationGateService } from '../publishing/PublicationGateService';
@@ -423,8 +428,18 @@ export class StageRunnerService {
         };
       }
 
+      const notificationRepo =
+        this.supabaseClient && !this.isMock
+          ? new SupabaseReviewNotificationStateRepository(this.supabaseClient)
+          : new MemoryReviewNotificationStateRepository();
+
+      const notificationService = new OperatorNotificationService({
+        stateRepository: notificationRepo,
+      });
+
       const engine = new StoryLifecycleEngine(repo, {
         lifecycleVersion: CURRENT_LIFECYCLE_VERSION,
+        notificationService,
       });
 
       let succeeded = 0;

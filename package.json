@@ -28,7 +28,8 @@
     "monitoring:test": "tsx test-monitoring.ts",
     "media:run": "tsx scripts/run-media-processing.ts",
     "media:audit": "tsx scripts/audit-media.ts",
-    "media:test": "tsx test-media-engine.ts"
+    "media:test": "tsx test-media-engine.ts",
+    "notification:test": "tsx test-operator-notifications.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

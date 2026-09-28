@@ -828,8 +828,8 @@ function computeHash(input) {
   if (!input) return "0000000000000000";
   if (typeof process !== "undefined" && process.versions && process.versions.node) {
     try {
-      const { createHash: createHash6 } = __require("crypto");
-      return createHash6("sha256").update(input).digest("hex");
+      const { createHash: createHash7 } = __require("crypto");
+      return createHash7("sha256").update(input).digest("hex");
     } catch {
     }
   }
@@ -4782,6 +4782,8 @@ var StoryLifecycleEngine = class {
     this.matchingEngine = options.matchingEngine || new StoryMatchingEngine(this.clusteringService);
     this.mergePolicy = options.mergePolicy || new StoryMergePolicy(this.matchingEngine);
     this.lifecycleVersion = options.lifecycleVersion || CURRENT_LIFECYCLE_VERSION;
+    this.notificationService = options.notificationService;
+    this.baseUrl = (options.baseUrl || "https://the-meridian.news").replace(/\/+$/, "");
   }
   /**
    * Generates a stable URL slug from the title and a short ID
@@ -4864,6 +4866,25 @@ var StoryLifecycleEngine = class {
       };
       if (!options.dryRun) {
         await this.repository.saveLifecycleDecision(decision);
+        if (this.notificationService) {
+          try {
+            await this.notificationService.notifyReviewRequired({
+              storyId: extractionId,
+              headline: candidate.title,
+              source: candidate.sources?.[0]?.name || candidate.sources?.[0]?.url || "unknown",
+              reason: decision.reason,
+              category: candidate.category,
+              reviewUrl: `${this.baseUrl}/review/${validationId}`,
+              timestamp: now,
+              validationId,
+              extractionId,
+              validationStatus: validation.status,
+              issues: validation.issues
+            });
+          } catch (notifErr) {
+            console.warn("[StoryLifecycleEngine] Fail-safe caught notification error:", notifErr);
+          }
+        }
       }
       return decision;
     }
@@ -5571,8 +5592,741 @@ var MockLifecycleRepository = class {
   }
 };
 
-// src/services/publishing/PublicationGateService.ts
+// src/services/notification/WebhookSecretSanitizer.ts
+var WebhookSecretSanitizer = class {
+  /**
+   * Sanitizes a webhook URL so sensitive tokens or query secrets are never printed.
+   * - Discord: https://discord.com/api/webhooks/123/token -> .../123/[REDACTED]
+   * - Slack: https://hooks.slack.com/services/T00/B00/token -> .../T00/B00/[REDACTED]
+   * - Query parameters: ?token=xyz -> ?token=[REDACTED]
+   */
+  static sanitizeUrl(url) {
+    if (!url || url.trim() === "") {
+      return "[NOT_CONFIGURED]";
+    }
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname.includes("discord.com")) {
+        const parts = parsed.pathname.split("/").filter(Boolean);
+        if (parts.length >= 3 && parts[1] === "webhooks") {
+          parts[parts.length - 1] = "[REDACTED]";
+          parsed.pathname = "/" + parts.join("/");
+          return parsed.toString();
+        }
+      }
+      if (parsed.hostname.includes("slack.com")) {
+        const parts = parsed.pathname.split("/").filter(Boolean);
+        if (parts.length >= 4 && parts[0] === "services") {
+          parts[parts.length - 1] = "[REDACTED]";
+          parsed.pathname = "/" + parts.join("/");
+          return parsed.toString();
+        }
+      }
+      const sensitiveKeys = ["token", "secret", "key", "auth", "webhook_secret"];
+      for (const paramKey of parsed.searchParams.keys()) {
+        if (sensitiveKeys.some((s) => paramKey.toLowerCase().includes(s))) {
+          parsed.searchParams.set(paramKey, "[REDACTED]");
+        }
+      }
+      return parsed.toString();
+    } catch {
+      return "[REDACTED_INVALID_URL]";
+    }
+  }
+  /**
+   * Sanitizes arbitrary error messages or strings by masking any configured secret URL or tokens.
+   */
+  static sanitizeMessage(message, secretUrl) {
+    let sanitized = message;
+    if (secretUrl && secretUrl.length > 5) {
+      sanitized = sanitized.replaceAll(secretUrl, this.sanitizeUrl(secretUrl));
+      try {
+        const parsed = new URL(secretUrl);
+        const lastSegment = parsed.pathname.split("/").filter(Boolean).pop();
+        if (lastSegment && lastSegment.length > 8) {
+          sanitized = sanitized.replaceAll(lastSegment, "[REDACTED]");
+        }
+      } catch {
+      }
+    }
+    return sanitized;
+  }
+};
+
+// src/services/notification/NotificationConfigService.ts
+var NotificationConfigService = class {
+  parseBool(val, defaultVal = false) {
+    if (val === void 0 || val === "") return defaultVal;
+    const lower = val.trim().toLowerCase();
+    return lower === "true" || lower === "1" || lower === "yes";
+  }
+  parseInt(val, defaultVal, min = 100, max = 6e4) {
+    if (!val) return defaultVal;
+    const num = parseInt(val, 10);
+    if (isNaN(num)) return defaultVal;
+    return Math.max(min, Math.min(num, max));
+  }
+  getConfig() {
+    const rawProvider = (process.env.REVIEW_NOTIFICATION_PROVIDER || "webhook").toLowerCase().trim();
+    const provider = rawProvider === "slack" ? "slack" : rawProvider === "discord" ? "discord" : "webhook";
+    const enabled = this.parseBool(process.env.REVIEW_NOTIFICATIONS_ENABLED, false);
+    const webhookUrl = process.env.REVIEW_NOTIFICATION_WEBHOOK_URL?.trim();
+    const timeoutMs = this.parseInt(process.env.REVIEW_NOTIFICATION_TIMEOUT_MS, 5e3, 500, 3e4);
+    const maxRetries = this.parseInt(process.env.REVIEW_NOTIFICATION_MAX_RETRIES, 2, 0, 5);
+    const baseUrl = (process.env.REVIEW_NOTIFICATION_BASE_URL || process.env.SITE_URL || "https://the-meridian.news").trim().replace(/\/+$/, "");
+    return {
+      enabled,
+      provider,
+      webhookUrl: webhookUrl || void 0,
+      timeoutMs,
+      maxRetries,
+      baseUrl
+    };
+  }
+  /**
+   * Returns a safe summary of configuration without printing secrets.
+   */
+  getSafeSummary() {
+    const config = this.getConfig();
+    return {
+      enabled: config.enabled,
+      provider: config.provider,
+      configuredUrl: WebhookSecretSanitizer.sanitizeUrl(config.webhookUrl),
+      hasWebhookUrl: Boolean(config.webhookUrl),
+      timeoutMs: config.timeoutMs,
+      maxRetries: config.maxRetries,
+      baseUrl: config.baseUrl
+    };
+  }
+};
+
+// src/services/notification/ReviewNotificationStateRepository.ts
+var MemoryReviewNotificationStateRepository = class {
+  constructor() {
+    this.records = /* @__PURE__ */ new Map();
+  }
+  async getLastNotifiedState(storyId) {
+    const record = this.records.get(storyId);
+    return record ? record.stateHash : null;
+  }
+  async recordNotifiedState(record) {
+    this.records.set(record.storyId, record);
+  }
+  clear() {
+    this.records.clear();
+  }
+};
+var SupabaseReviewNotificationStateRepository = class {
+  constructor(client2) {
+    this.client = client2;
+    this.memoryCache = /* @__PURE__ */ new Map();
+  }
+  async getLastNotifiedState(storyId) {
+    if (this.memoryCache.has(storyId)) {
+      return this.memoryCache.get(storyId).stateHash;
+    }
+    try {
+      const { data, error } = await this.client.from("automation_events").select("metadata, created_at").eq("stage", "lifecycle").eq("event_type", "OPERATOR_REVIEW_NOTIFICATION").contains("metadata", { storyId }).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (error || !data || !data.metadata) {
+        return null;
+      }
+      const stateHash = data.metadata.stateHash;
+      if (typeof stateHash === "string") {
+        this.memoryCache.set(storyId, {
+          storyId,
+          stateHash,
+          provider: data.metadata.provider || "webhook",
+          notifiedAt: data.created_at,
+          metadata: data.metadata
+        });
+        return stateHash;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  async recordNotifiedState(record) {
+    this.memoryCache.set(record.storyId, record);
+    try {
+      const eventId = `evt-notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      await this.client.from("automation_events").insert({
+        id: eventId,
+        stage: "lifecycle",
+        event_type: "OPERATOR_REVIEW_NOTIFICATION",
+        severity: "info",
+        message: `Operator review notification sent for story ${record.storyId}`,
+        metadata: {
+          storyId: record.storyId,
+          stateHash: record.stateHash,
+          provider: record.provider,
+          notifiedAt: record.notifiedAt,
+          ...record.metadata || {}
+        },
+        created_at: record.notifiedAt
+      });
+    } catch (err) {
+      console.warn("[SupabaseReviewNotificationStateRepository] Failed to persist event:", err);
+    }
+  }
+};
+
+// src/services/notification/OperatorNotificationService.ts
 import { createHash as createHash5 } from "crypto";
+
+// src/services/notification/providers/GenericWebhookProvider.ts
+var GenericWebhookProvider = class {
+  constructor(webhookUrl, timeoutMs = 5e3, maxRetries = 2) {
+    this.webhookUrl = webhookUrl;
+    this.timeoutMs = timeoutMs;
+    this.maxRetries = maxRetries;
+    this.type = "webhook";
+  }
+  formatMessageText(payload) {
+    return [
+      "The Meridian \u2014 Review Required",
+      "",
+      "Story:",
+      payload.headline,
+      "",
+      "Source:",
+      payload.source,
+      "",
+      "Reason:",
+      payload.reason,
+      "",
+      "Category:",
+      payload.category,
+      "",
+      "Story ID:",
+      payload.storyId,
+      "",
+      "Review URL:",
+      payload.reviewUrl,
+      "",
+      "Timestamp:",
+      payload.timestamp
+    ].join("\n");
+  }
+  async send(payload) {
+    const started = Date.now();
+    const formattedText = this.formatMessageText(payload);
+    const body = JSON.stringify({
+      event: "needs_review",
+      text: formattedText,
+      story: {
+        id: payload.storyId,
+        headline: payload.headline,
+        source: payload.source,
+        reason: payload.reason,
+        category: payload.category,
+        reviewUrl: payload.reviewUrl,
+        timestamp: payload.timestamp,
+        validationId: payload.validationId,
+        extractionId: payload.extractionId,
+        issues: payload.issues || []
+      }
+    });
+    let attempts = 0;
+    let lastError;
+    let lastStatusCode;
+    while (attempts <= this.maxRetries) {
+      attempts++;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+      try {
+        const response = await fetch(this.webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "TheMeridian-ReviewNotifier/1.0"
+          },
+          body,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        lastStatusCode = response.status;
+        if (response.ok) {
+          return {
+            success: true,
+            statusCode: response.status,
+            durationMs: Date.now() - started,
+            retries: attempts - 1
+          };
+        }
+        if (response.status >= 400 && response.status < 500) {
+          const respText2 = await response.text().catch(() => "");
+          lastError = `HTTP ${response.status}: ${respText2.substring(0, 200)}`;
+          break;
+        }
+        const respText = await response.text().catch(() => "");
+        lastError = `HTTP ${response.status}: ${respText.substring(0, 200)}`;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        const isTimeout = err.name === "AbortError" || err.message?.includes("aborted");
+        lastError = isTimeout ? `Request timed out after ${this.timeoutMs}ms` : err.message || String(err);
+      }
+      if (attempts <= this.maxRetries) {
+        const backoffMs = Math.min(1e3, 250 * Math.pow(2, attempts - 1));
+        await new Promise((r) => setTimeout(r, backoffMs));
+      }
+    }
+    const sanitizedError = WebhookSecretSanitizer.sanitizeMessage(
+      lastError || "Unknown webhook failure",
+      this.webhookUrl
+    );
+    return {
+      success: false,
+      statusCode: lastStatusCode,
+      durationMs: Date.now() - started,
+      retries: attempts - 1,
+      error: sanitizedError
+    };
+  }
+};
+
+// src/services/notification/providers/SlackWebhookProvider.ts
+var SlackWebhookProvider = class {
+  constructor(webhookUrl, timeoutMs = 5e3, maxRetries = 2) {
+    this.webhookUrl = webhookUrl;
+    this.timeoutMs = timeoutMs;
+    this.maxRetries = maxRetries;
+    this.type = "slack";
+  }
+  formatPayload(payload) {
+    return {
+      text: `The Meridian \u2014 Review Required: ${payload.headline}`,
+      blocks: [
+        {
+          type: "header",
+          text: {
+            type: "plain_text",
+            text: "\u26A0\uFE0F The Meridian \u2014 Review Required",
+            emoji: true
+          }
+        },
+        {
+          type: "section",
+          fields: [
+            {
+              type: "mrkdwn",
+              text: `*Story:*
+${payload.headline}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*Source:*
+${payload.source}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*Category:*
+${payload.category}`
+            },
+            {
+              type: "mrkdwn",
+              text: `*Story ID:*
+\`${payload.storyId}\``
+            }
+          ]
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Reason:*
+${payload.reason}`
+          }
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Review URL:*
+<${payload.reviewUrl}|${payload.reviewUrl}>`
+          }
+        },
+        {
+          type: "context",
+          elements: [
+            {
+              type: "mrkdwn",
+              text: `*Timestamp:* ${payload.timestamp} | The Meridian Automated Pipeline Gate`
+            }
+          ]
+        }
+      ]
+    };
+  }
+  async send(payload) {
+    const started = Date.now();
+    const body = JSON.stringify(this.formatPayload(payload));
+    let attempts = 0;
+    let lastError;
+    let lastStatusCode;
+    while (attempts <= this.maxRetries) {
+      attempts++;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+      try {
+        const response = await fetch(this.webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "TheMeridian-ReviewNotifier/1.0"
+          },
+          body,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        lastStatusCode = response.status;
+        if (response.ok) {
+          return {
+            success: true,
+            statusCode: response.status,
+            durationMs: Date.now() - started,
+            retries: attempts - 1
+          };
+        }
+        if (response.status >= 400 && response.status < 500) {
+          const respText2 = await response.text().catch(() => "");
+          lastError = `HTTP ${response.status}: ${respText2.substring(0, 200)}`;
+          break;
+        }
+        const respText = await response.text().catch(() => "");
+        lastError = `HTTP ${response.status}: ${respText.substring(0, 200)}`;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        const isTimeout = err.name === "AbortError" || err.message?.includes("aborted");
+        lastError = isTimeout ? `Request timed out after ${this.timeoutMs}ms` : err.message || String(err);
+      }
+      if (attempts <= this.maxRetries) {
+        const backoffMs = Math.min(1e3, 250 * Math.pow(2, attempts - 1));
+        await new Promise((r) => setTimeout(r, backoffMs));
+      }
+    }
+    const sanitizedError = WebhookSecretSanitizer.sanitizeMessage(
+      lastError || "Unknown Slack webhook failure",
+      this.webhookUrl
+    );
+    return {
+      success: false,
+      statusCode: lastStatusCode,
+      durationMs: Date.now() - started,
+      retries: attempts - 1,
+      error: sanitizedError
+    };
+  }
+};
+
+// src/services/notification/providers/DiscordWebhookProvider.ts
+var DiscordWebhookProvider = class {
+  constructor(webhookUrl, timeoutMs = 5e3, maxRetries = 2) {
+    this.webhookUrl = webhookUrl;
+    this.timeoutMs = timeoutMs;
+    this.maxRetries = maxRetries;
+    this.type = "discord";
+  }
+  formatPayload(payload) {
+    return {
+      content: "\u{1F6A8} **The Meridian \u2014 Review Required**",
+      embeds: [
+        {
+          title: payload.headline,
+          url: payload.reviewUrl,
+          color: 16096779,
+          // Amber / review required warning color
+          fields: [
+            {
+              name: "Source",
+              value: payload.source,
+              inline: true
+            },
+            {
+              name: "Category",
+              value: payload.category,
+              inline: true
+            },
+            {
+              name: "Story ID",
+              value: `\`${payload.storyId}\``,
+              inline: true
+            },
+            {
+              name: "Reason",
+              value: payload.reason,
+              inline: false
+            },
+            {
+              name: "Review URL",
+              value: `[Open Editorial Review](${payload.reviewUrl})`,
+              inline: false
+            }
+          ],
+          timestamp: payload.timestamp,
+          footer: {
+            text: "The Meridian Pipeline Quality Gate"
+          }
+        }
+      ]
+    };
+  }
+  async send(payload) {
+    const started = Date.now();
+    const body = JSON.stringify(this.formatPayload(payload));
+    let attempts = 0;
+    let lastError;
+    let lastStatusCode;
+    while (attempts <= this.maxRetries) {
+      attempts++;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+      try {
+        const response = await fetch(this.webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "TheMeridian-ReviewNotifier/1.0"
+          },
+          body,
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        lastStatusCode = response.status;
+        if (response.ok || response.status === 204) {
+          return {
+            success: true,
+            statusCode: response.status,
+            durationMs: Date.now() - started,
+            retries: attempts - 1
+          };
+        }
+        if (response.status >= 400 && response.status < 500) {
+          const respText2 = await response.text().catch(() => "");
+          lastError = `HTTP ${response.status}: ${respText2.substring(0, 200)}`;
+          break;
+        }
+        const respText = await response.text().catch(() => "");
+        lastError = `HTTP ${response.status}: ${respText.substring(0, 200)}`;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        const isTimeout = err.name === "AbortError" || err.message?.includes("aborted");
+        lastError = isTimeout ? `Request timed out after ${this.timeoutMs}ms` : err.message || String(err);
+      }
+      if (attempts <= this.maxRetries) {
+        const backoffMs = Math.min(1e3, 250 * Math.pow(2, attempts - 1));
+        await new Promise((r) => setTimeout(r, backoffMs));
+      }
+    }
+    const sanitizedError = WebhookSecretSanitizer.sanitizeMessage(
+      lastError || "Unknown Discord webhook failure",
+      this.webhookUrl
+    );
+    return {
+      success: false,
+      statusCode: lastStatusCode,
+      durationMs: Date.now() - started,
+      retries: attempts - 1,
+      error: sanitizedError
+    };
+  }
+};
+
+// src/services/notification/OperatorNotificationService.ts
+var OperatorNotificationService = class {
+  constructor(options = {}) {
+    this.configService = options.configService || new NotificationConfigService();
+    this.stateRepository = options.stateRepository || new MemoryReviewNotificationStateRepository();
+    this.customProvider = options.customProvider;
+  }
+  /**
+   * Computes a deterministic hash of the candidate's review state.
+   * If the storyId, status, review reason, or issues change, this hash changes.
+   */
+  computeStateHash(input) {
+    const status = input.validationStatus || "needs_review";
+    const reason = (input.reason || "").trim();
+    const sortedIssues = (input.issues || []).map((i) => `${i.code}:${i.field || ""}:${i.message || ""}`).sort().join("|");
+    return createHash5("sha256").update(`${input.storyId}::${status}::${reason}::${sortedIssues}`).digest("hex").substring(0, 32);
+  }
+  /**
+   * Generates standard review URL for the site operator.
+   */
+  generateReviewUrl(storyId, validationId) {
+    const config = this.configService.getConfig();
+    const targetId = validationId || storyId;
+    return `${config.baseUrl}/review/${targetId}`;
+  }
+  /**
+   * Instantiates the configured notification provider.
+   */
+  resolveProvider(config) {
+    if (this.customProvider) {
+      return this.customProvider;
+    }
+    if (!config.webhookUrl) {
+      return null;
+    }
+    switch (config.provider) {
+      case "slack":
+        return new SlackWebhookProvider(config.webhookUrl, config.timeoutMs, config.maxRetries);
+      case "discord":
+        return new DiscordWebhookProvider(config.webhookUrl, config.timeoutMs, config.maxRetries);
+      case "webhook":
+      default:
+        return new GenericWebhookProvider(config.webhookUrl, config.timeoutMs, config.maxRetries);
+    }
+  }
+  /**
+   * Notifies the operator when a candidate is routed to needs_review.
+   * Strictly fail-safe: failures never throw and never abort pipeline processing.
+   */
+  async notifyReviewRequired(input) {
+    const started = Date.now();
+    const status = input.validationStatus || "needs_review";
+    if (status !== "needs_review") {
+      return {
+        notified: false,
+        success: true,
+        provider: "none",
+        durationMs: Date.now() - started,
+        retries: 0,
+        skipReason: "NON_REVIEW_STATUS",
+        storyId: input.storyId
+      };
+    }
+    const config = this.configService.getConfig();
+    if (!config.enabled) {
+      return {
+        notified: false,
+        success: true,
+        provider: config.provider,
+        durationMs: Date.now() - started,
+        retries: 0,
+        skipReason: "DISABLED",
+        storyId: input.storyId
+      };
+    }
+    if (!config.webhookUrl && !this.customProvider) {
+      return {
+        notified: false,
+        success: true,
+        provider: config.provider,
+        durationMs: Date.now() - started,
+        retries: 0,
+        skipReason: "MISSING_URL",
+        storyId: input.storyId
+      };
+    }
+    const stateHash = this.computeStateHash({
+      storyId: input.storyId,
+      validationStatus: status,
+      reason: input.reason,
+      issues: input.issues
+    });
+    if (!input.force) {
+      const lastState = await this.stateRepository.getLastNotifiedState(input.storyId);
+      if (lastState && lastState === stateHash) {
+        return {
+          notified: false,
+          success: true,
+          provider: config.provider,
+          durationMs: Date.now() - started,
+          retries: 0,
+          skipReason: "DUPLICATE_REVIEW_STATE",
+          storyId: input.storyId,
+          stateHash
+        };
+      }
+    }
+    const provider = this.resolveProvider(config);
+    if (!provider) {
+      return {
+        notified: false,
+        success: false,
+        provider: config.provider,
+        durationMs: Date.now() - started,
+        retries: 0,
+        skipReason: "INVALID_CONFIG",
+        error: "Unable to resolve notification provider.",
+        storyId: input.storyId,
+        stateHash
+      };
+    }
+    const reviewUrl = input.reviewUrl || this.generateReviewUrl(input.storyId, input.validationId);
+    const timestamp = input.timestamp || (/* @__PURE__ */ new Date()).toISOString();
+    const payload = {
+      storyId: input.storyId,
+      headline: input.headline,
+      source: input.source,
+      reason: input.reason,
+      category: input.category,
+      reviewUrl,
+      timestamp,
+      validationId: input.validationId,
+      extractionId: input.extractionId,
+      validationStatus: status,
+      issues: input.issues || [],
+      stateHash
+    };
+    try {
+      const sendResult = await provider.send(payload);
+      if (sendResult.success) {
+        await this.stateRepository.recordNotifiedState({
+          storyId: input.storyId,
+          stateHash,
+          provider: provider.type,
+          notifiedAt: timestamp,
+          metadata: {
+            headline: input.headline,
+            reason: input.reason,
+            validationId: input.validationId
+          }
+        });
+        return {
+          notified: true,
+          success: true,
+          provider: provider.type,
+          statusCode: sendResult.statusCode,
+          durationMs: Date.now() - started,
+          retries: sendResult.retries,
+          storyId: input.storyId,
+          stateHash
+        };
+      }
+      return {
+        notified: true,
+        success: false,
+        provider: provider.type,
+        statusCode: sendResult.statusCode,
+        durationMs: Date.now() - started,
+        retries: sendResult.retries,
+        error: sendResult.error,
+        storyId: input.storyId,
+        stateHash
+      };
+    } catch (unhandledErr) {
+      const safeError = WebhookSecretSanitizer.sanitizeMessage(
+        unhandledErr?.message || String(unhandledErr),
+        config.webhookUrl
+      );
+      console.warn("[OperatorNotificationService] Fail-safe caught notification error:", safeError);
+      return {
+        notified: true,
+        success: false,
+        provider: provider.type,
+        durationMs: Date.now() - started,
+        retries: 0,
+        error: safeError,
+        storyId: input.storyId,
+        stateHash
+      };
+    }
+  }
+};
+
+// src/services/publishing/PublicationGateService.ts
+import { createHash as createHash6 } from "crypto";
 
 // src/services/publishing/PublicationPolicyService.ts
 var DEFAULT_PUBLICATION_POLICY = {
@@ -5823,7 +6577,7 @@ var PublicationGateService = class _PublicationGateService {
         value: f.value
       }))
     });
-    return createHash5("sha256").update(payload).digest("hex");
+    return createHash6("sha256").update(payload).digest("hex");
   }
   /**
    * Evaluates all publication gates for an incoming candidate.
@@ -7328,8 +8082,13 @@ var StageRunnerService = class {
           errors: []
         };
       }
+      const notificationRepo = this.supabaseClient && !this.isMock ? new SupabaseReviewNotificationStateRepository(this.supabaseClient) : new MemoryReviewNotificationStateRepository();
+      const notificationService = new OperatorNotificationService({
+        stateRepository: notificationRepo
+      });
       const engine = new StoryLifecycleEngine(repo, {
-        lifecycleVersion: CURRENT_LIFECYCLE_VERSION
+        lifecycleVersion: CURRENT_LIFECYCLE_VERSION,
+        notificationService
       });
       let succeeded = 0;
       let failed = 0;
@@ -12376,6 +13135,76 @@ export {
  *
  * The Meridian — Global News Platform
  * Canonical Category Taxonomy & Normalization Layer
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * Operator Review Notification Types
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * Webhook Secret Sanitizer: Strict Redaction for Logs, Errors & URLs
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * NotificationConfigService: Centralized Operator Review Notification Configuration
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * Review Notification State Repository: Idempotency & Anti-Spam Tracking
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * Generic Webhook Provider: Standard HTTP POST with Review Payload
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * Slack Webhook Provider: Formatted Block Kit Operator Review Notifications
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * Discord Webhook Provider: Formatted Rich Embed Operator Review Notifications
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * OperatorNotificationService: Operator Alerting for Editorial Review Candidates
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * Notification Provider Interface
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * Operator Review Notification Services Entrypoint
  */
 /**
  * @license

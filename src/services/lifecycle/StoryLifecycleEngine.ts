@@ -18,6 +18,7 @@ import type { LifecycleRepository } from '../../data/repositories/LifecycleRepos
 import { StoryClusteringService } from './StoryClusteringService';
 import { StoryMatchingEngine } from './StoryMatchingEngine';
 import { StoryMergePolicy } from './StoryMergePolicy';
+import type { OperatorNotificationService } from '../notification/OperatorNotificationService';
 
 export const CURRENT_LIFECYCLE_VERSION = 'v1.0.0-universal-lifecycle-gate';
 
@@ -32,6 +33,8 @@ export class StoryLifecycleEngine {
   private matchingEngine: StoryMatchingEngine;
   private mergePolicy: StoryMergePolicy;
   private lifecycleVersion: string;
+  private notificationService?: OperatorNotificationService;
+  private baseUrl: string;
 
   private inFlightLocks: Map<string, Promise<void>> = new Map();
 
@@ -42,6 +45,8 @@ export class StoryLifecycleEngine {
       matchingEngine?: StoryMatchingEngine;
       mergePolicy?: StoryMergePolicy;
       lifecycleVersion?: string;
+      notificationService?: OperatorNotificationService;
+      baseUrl?: string;
     } = {}
   ) {
     this.repository = repository;
@@ -49,6 +54,8 @@ export class StoryLifecycleEngine {
     this.matchingEngine = options.matchingEngine || new StoryMatchingEngine(this.clusteringService);
     this.mergePolicy = options.mergePolicy || new StoryMergePolicy(this.matchingEngine);
     this.lifecycleVersion = options.lifecycleVersion || CURRENT_LIFECYCLE_VERSION;
+    this.notificationService = options.notificationService;
+    this.baseUrl = (options.baseUrl || 'https://the-meridian.news').replace(/\/+$/, '');
   }
 
   /**
@@ -153,6 +160,26 @@ export class StoryLifecycleEngine {
 
       if (!options.dryRun) {
         await this.repository.saveLifecycleDecision(decision);
+
+        if (this.notificationService) {
+          try {
+            await this.notificationService.notifyReviewRequired({
+              storyId: extractionId,
+              headline: candidate.title,
+              source: candidate.sources?.[0]?.name || candidate.sources?.[0]?.url || 'unknown',
+              reason: decision.reason,
+              category: candidate.category,
+              reviewUrl: `${this.baseUrl}/review/${validationId}`,
+              timestamp: now,
+              validationId,
+              extractionId,
+              validationStatus: validation.status,
+              issues: validation.issues,
+            });
+          } catch (notifErr) {
+            console.warn('[StoryLifecycleEngine] Fail-safe caught notification error:', notifErr);
+          }
+        }
       }
       return decision;
     }
