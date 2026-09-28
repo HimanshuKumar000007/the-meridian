@@ -14,38 +14,22 @@ import type {
 } from '../../types/validation';
 import type { ExtractedEntity, ExtractedFact } from '../../types/extraction';
 
-// Keyword taxonomy mapping for category heuristic validation
-const CATEGORY_KEYWORDS: Record<string, string[]> = {
-  tech: ['ai', 'software', 'hardware', 'chip', 'semiconductor', 'cloud', 'quantum', 'computer', 'apple', 'google', 'microsoft', 'nvidia', 'algorithm', 'app', 'cybersecurity', 'tech', 'digital', 'developer', 'gadget', 'robotics'],
-  politics: ['president', 'prime minister', 'senate', 'congress', 'parliament', 'election', 'vote', 'diplomat', 'treaty', 'foreign minister', 'government', 'bill', 'law', 'policy', 'campaign', 'white house', 'kremlin', 'downing street', 'legislation'],
-  business: ['earnings', 'revenue', 'profit', 'sales', 'spending', 'quarterly', 'shares', 'stock', 'investor', 'market', 'nasdaq', 'nyse', 'merger', 'acquisition', 'cfo', 'ceo', 'valuation', 'inflation', 'interest rates', 'federal reserve', 'central bank', 'economy', 'retail', 'industry', 'commercial', 'corporate', 'growth', 'energy', 'reserves', 'stockpiles', 'funds', 'monetary', 'bank', 'banking', 'finance', 'financial', 'rate', 'rates'],
-  science: ['research', 'scientist', 'laboratory', 'space', 'telescope', 'astronomy', 'nasa', 'esa', 'physics', 'quantum', 'biology', 'fossil', 'species', 'discovery', 'molecule', 'genome', 'dna', 'nature', 'galaxy', 'planet'],
-  sports: ['game', 'match', 'tournament', 'championship', 'cup', 'league', 'player', 'team', 'coach', 'goal', 'score', 'stadium', 'football', 'soccer', 'basketball', 'nba', 'fifa', 'olympic', 'tennis', 'baseball', 'cricket'],
-  culture: ['art', 'museum', 'exhibition', 'painting', 'novel', 'author', 'movie', 'film', 'cinema', 'theatre', 'actor', 'actress', 'director', 'oscar', 'music', 'album', 'concert', 'grammy', 'festival', 'literature'],
-  health: ['medical', 'hospital', 'doctor', 'patient', 'disease', 'virus', 'infection', 'cancer', 'treatment', 'drug', 'fda', 'who', 'therapy', 'health', 'medicine', 'clinical trial', 'surgery', 'vaccine'],
-  climate: ['climate', 'global warming', 'emissions', 'carbon', 'greenhouse', 'renewable', 'solar', 'wind energy', 'glacier', 'sea level', 'drought', 'wildfire', 'biodiversity', 'pollution', 'cop28', 'cop29', 'fossil fuels', 'energy', 'natural gas', 'gas'],
-  world: ['international', 'united nations', 'border', 'refugee', 'summit', 'global', 'peacekeeping', 'treaty', 'embassy', 'foreign affairs', 'conflict', 'bilateral', 'geopolitics', 'crisis'],
-  lifestyle: ['travel', 'food', 'cuisine', 'restaurant', 'fashion', 'wellness', 'fitness', 'home', 'design', 'leisure', 'living', 'lifestyle', 'decor'],
-  opinion: ['editorial', 'opinion', 'column', 'commentary', 'perspective', 'viewpoint', 'essay', 'analysis', 'argument', 'critique'],
-};
+import {
+  normalizeCategory,
+  PLATFORM_CATEGORIES,
+  CATEGORY_KEYWORDS,
+  COMPATIBLE_PAIRS,
+  INCOMPATIBLE_CATEGORIES,
+  type PlatformCategory,
+} from './categoryTaxonomy';
 
-// Compatible / cross-domain categories
-const COMPATIBLE_PAIRS: Record<string, string[]> = {
-  business: ['tech', 'world', 'politics', 'climate'],
-  tech: ['business', 'science'],
-  science: ['tech', 'health', 'climate'],
-  world: ['politics', 'business', 'climate'],
-  politics: ['world', 'business'],
-  health: ['science'],
-  climate: ['science', 'world', 'politics', 'business'],
-};
-
-// Incompatible category pairs (strong mutual contradiction)
-const INCOMPATIBLE_CATEGORIES: Record<string, string[]> = {
-  sports: ['science', 'politics', 'climate', 'business'],
-  culture: ['business', 'science'],
-  science: ['sports', 'culture'],
-  business: ['sports', 'culture'],
+export {
+  normalizeCategory,
+  PLATFORM_CATEGORIES,
+  CATEGORY_KEYWORDS,
+  COMPATIBLE_PAIRS,
+  INCOMPATIBLE_CATEGORIES,
+  type PlatformCategory,
 };
 
 /**
@@ -78,23 +62,33 @@ export function validateCategoryHeuristic(
   sourceText: string,
   summary: string = ''
 ): CategoryValidationResult {
-  const normCategory = (extractedCategory || '').toLowerCase().trim();
+  const normCategory = normalizeCategory(extractedCategory);
   const sourceLower = sourceText.toLowerCase();
 
-  // Keyword scoring on ground-truth source material
+  // Keyword scoring on ground-truth source material with word-boundary awareness
   const sourceScores: Record<string, number> = {};
   for (const [cat, kws] of Object.entries(CATEGORY_KEYWORDS)) {
     let matches = 0;
     for (const kw of kws) {
-      if (sourceLower.includes(kw)) {
-        matches++;
+      if (kw.length <= 4) {
+        // Use word boundary check for short words/abbreviations to prevent substring matching
+        const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+        if (regex.test(sourceLower)) {
+          matches++;
+        }
+      } else {
+        if (sourceLower.includes(kw)) {
+          matches++;
+        }
       }
     }
     sourceScores[cat] = matches;
   }
 
+  // Determine best category from source evidence, prioritizing normCategory on tie
   let bestCategory = normCategory;
-  let maxScore = -1;
+  let maxScore = sourceScores[normCategory] || 0;
   for (const [cat, score] of Object.entries(sourceScores)) {
     if (score > maxScore) {
       maxScore = score;
@@ -104,7 +98,7 @@ export function validateCategoryHeuristic(
 
   const currentSourceScore = sourceScores[normCategory] || 0;
 
-  // Direct match in source
+  // 1. Direct match in source
   if (normCategory === bestCategory && currentSourceScore > 0) {
     return {
       expectedCategory: bestCategory,
@@ -114,18 +108,18 @@ export function validateCategoryHeuristic(
     };
   }
 
-  // Cross-domain acceptable overlap
+  // 2. Cross-domain acceptable overlap
   const compatibleWith = COMPATIBLE_PAIRS[normCategory] || [];
   if (compatibleWith.includes(bestCategory) || currentSourceScore >= 1) {
     return {
       expectedCategory: bestCategory,
       extractedCategory: normCategory,
       status: 'acceptable',
-      confidence: 0.8,
+      confidence: 0.85,
     };
   }
 
-  // Incompatible category where source contains 0 keywords of candidate category
+  // 3. Incompatible category where source contains 0 keywords of candidate category
   const incompatibleWith = INCOMPATIBLE_CATEGORIES[normCategory] || [];
   if (incompatibleWith.includes(bestCategory) && currentSourceScore === 0) {
     return {
@@ -136,7 +130,7 @@ export function validateCategoryHeuristic(
     };
   }
 
-  // If no category has a strong signal (maxScore < 2), accept the extracted category
+  // 4. If no category has a strong signal (maxScore < 2), accept the extracted category
   if (maxScore < 2) {
     return {
       expectedCategory: normCategory,
@@ -146,7 +140,7 @@ export function validateCategoryHeuristic(
     };
   }
 
-  // Strong conflicting category in source with zero signal for current
+  // 5. Strong conflicting category in source with zero signal for current
   if (maxScore >= 3 && currentSourceScore === 0) {
     return {
       expectedCategory: bestCategory,

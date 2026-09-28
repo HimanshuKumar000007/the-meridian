@@ -3092,35 +3092,459 @@ var MockExtractionRepository = class {
 // src/services/validation/ValidationEngine.ts
 import { createHash as createHash2 } from "crypto";
 
-// src/services/validation/deterministicValidators.ts
+// src/services/validation/categoryTaxonomy.ts
+function normalizeCategory(category) {
+  if (!category || typeof category !== "string") return "general";
+  const clean = category.toLowerCase().trim();
+  const ALIAS_MAP = {
+    // Technology aliases
+    tech: "technology",
+    technology: "technology",
+    it: "technology",
+    // AI aliases (independent first-class category)
+    ai: "ai",
+    "artificial-intelligence": "ai",
+    "artificial intelligence": "ai",
+    genai: "ai",
+    "generative-ai": "ai",
+    "generative ai": "ai",
+    "machine-learning": "ai",
+    "machine learning": "ai",
+    // Gaming aliases
+    game: "gaming",
+    games: "gaming",
+    gaming: "gaming",
+    videogames: "gaming",
+    videogame: "gaming",
+    "video-games": "gaming",
+    "video games": "gaming",
+    // Cybersecurity aliases
+    cybersecurity: "cybersecurity",
+    cyber: "cybersecurity",
+    infosec: "cybersecurity",
+    security: "cybersecurity",
+    // Apps aliases
+    apps: "apps",
+    app: "apps",
+    applications: "apps",
+    application: "apps",
+    // Hardware aliases
+    hardware: "hardware",
+    devices: "hardware",
+    gadgets: "hardware",
+    semiconductors: "hardware",
+    // Business aliases
+    business: "business",
+    biz: "business",
+    finance: "business",
+    financial: "business",
+    economy: "business",
+    // World aliases
+    world: "world",
+    politics: "world",
+    global: "world",
+    international: "world",
+    // Entertainment aliases
+    entertainment: "entertainment",
+    culture: "entertainment",
+    media: "entertainment",
+    movies: "entertainment",
+    music: "entertainment"
+  };
+  return ALIAS_MAP[clean] || clean;
+}
 var CATEGORY_KEYWORDS = {
-  tech: ["ai", "software", "hardware", "chip", "semiconductor", "cloud", "quantum", "computer", "apple", "google", "microsoft", "nvidia", "algorithm", "app", "cybersecurity", "tech", "digital", "developer", "gadget", "robotics"],
-  politics: ["president", "prime minister", "senate", "congress", "parliament", "election", "vote", "diplomat", "treaty", "foreign minister", "government", "bill", "law", "policy", "campaign", "white house", "kremlin", "downing street", "legislation"],
-  business: ["earnings", "revenue", "profit", "sales", "spending", "quarterly", "shares", "stock", "investor", "market", "nasdaq", "nyse", "merger", "acquisition", "cfo", "ceo", "valuation", "inflation", "interest rates", "federal reserve", "central bank", "economy", "retail", "industry", "commercial", "corporate", "growth", "energy", "reserves", "stockpiles", "funds", "monetary", "bank", "banking", "finance", "financial", "rate", "rates"],
-  science: ["research", "scientist", "laboratory", "space", "telescope", "astronomy", "nasa", "esa", "physics", "quantum", "biology", "fossil", "species", "discovery", "molecule", "genome", "dna", "nature", "galaxy", "planet"],
-  sports: ["game", "match", "tournament", "championship", "cup", "league", "player", "team", "coach", "goal", "score", "stadium", "football", "soccer", "basketball", "nba", "fifa", "olympic", "tennis", "baseball", "cricket"],
-  culture: ["art", "museum", "exhibition", "painting", "novel", "author", "movie", "film", "cinema", "theatre", "actor", "actress", "director", "oscar", "music", "album", "concert", "grammy", "festival", "literature"],
-  health: ["medical", "hospital", "doctor", "patient", "disease", "virus", "infection", "cancer", "treatment", "drug", "fda", "who", "therapy", "health", "medicine", "clinical trial", "surgery", "vaccine"],
-  climate: ["climate", "global warming", "emissions", "carbon", "greenhouse", "renewable", "solar", "wind energy", "glacier", "sea level", "drought", "wildfire", "biodiversity", "pollution", "cop28", "cop29", "fossil fuels", "energy", "natural gas", "gas"],
-  world: ["international", "united nations", "border", "refugee", "summit", "global", "peacekeeping", "treaty", "embassy", "foreign affairs", "conflict", "bilateral", "geopolitics", "crisis"],
-  lifestyle: ["travel", "food", "cuisine", "restaurant", "fashion", "wellness", "fitness", "home", "design", "leisure", "living", "lifestyle", "decor"],
-  opinion: ["editorial", "opinion", "column", "commentary", "perspective", "viewpoint", "essay", "analysis", "argument", "critique"]
+  ai: [
+    "artificial intelligence",
+    "machine learning",
+    "deep learning",
+    "neural network",
+    "neural networks",
+    "large language model",
+    "large language models",
+    "llm",
+    "llms",
+    "generative ai",
+    "genai",
+    "chatgpt",
+    "openai",
+    "anthropic",
+    "agi",
+    "transformer model",
+    "model weights",
+    "prompt engineering",
+    "computer vision",
+    "natural language processing",
+    "diffusion model",
+    "ai model",
+    "ai models",
+    "ai agent",
+    "ai agents",
+    "superintelligence",
+    "ai"
+  ],
+  technology: [
+    "software",
+    "cloud",
+    "datacenter",
+    "datacenters",
+    "server",
+    "servers",
+    "operating system",
+    "programming",
+    "developer",
+    "developers",
+    "open source",
+    "database",
+    "infrastructure",
+    "saas",
+    "internet",
+    "broadband",
+    "telecom",
+    "algorithm",
+    "digital",
+    "silicon valley",
+    "computing",
+    "quantum computing",
+    "quantum",
+    "computer",
+    "qubit",
+    "qubits",
+    "processor",
+    "chip",
+    "hardware",
+    "tech"
+  ],
+  hardware: [
+    "chip",
+    "chips",
+    "semiconductor",
+    "semiconductors",
+    "processor",
+    "processors",
+    "transistor",
+    "transistors",
+    "gpu",
+    "gpus",
+    "cpu",
+    "cpus",
+    "fab",
+    "foundry",
+    "tsmc",
+    "intel",
+    "nvidia",
+    "amd",
+    "arm",
+    "hardware",
+    "device",
+    "devices",
+    "smartphone",
+    "laptop",
+    "circuit",
+    "gadget",
+    "quantum processor",
+    "qubit",
+    "qubits"
+  ],
+  cybersecurity: [
+    "cybersecurity",
+    "hacker",
+    "hackers",
+    "hacking",
+    "malware",
+    "ransomware",
+    "data breach",
+    "breach",
+    "vulnerability",
+    "vulnerabilities",
+    "exploit",
+    "zero-day",
+    "phishing",
+    "firewall",
+    "encryption",
+    "ddos",
+    "backdoor",
+    "spyware",
+    "infosec",
+    "cyber attack",
+    "cyberattack",
+    "cve"
+  ],
+  apps: [
+    "app",
+    "apps",
+    "application",
+    "applications",
+    "mobile app",
+    "ios",
+    "android",
+    "app store",
+    "play store",
+    "whatsapp",
+    "instagram",
+    "tiktok",
+    "social media app",
+    "user interface",
+    "mobile application"
+  ],
+  gaming: [
+    "gaming",
+    "gamer",
+    "gamers",
+    "playstation",
+    "xbox",
+    "nintendo",
+    "steam",
+    "esports",
+    "gameplay",
+    "rpg",
+    "multiplayer",
+    "console",
+    "unreal engine",
+    "unity engine",
+    "videogame",
+    "videogames",
+    "video game",
+    "video games",
+    "game"
+  ],
+  science: [
+    "research",
+    "researchers",
+    "scientist",
+    "scientists",
+    "laboratory",
+    "physics",
+    "biology",
+    "fossil",
+    "species",
+    "discovery",
+    "molecule",
+    "genome",
+    "dna",
+    "peer-reviewed",
+    "experiment",
+    "chemistry",
+    "scientific",
+    "astronomy",
+    "quantum physics"
+  ],
+  space: [
+    "space",
+    "telescope",
+    "astronomy",
+    "nasa",
+    "esa",
+    "galaxy",
+    "planet",
+    "orbit",
+    "rocket",
+    "spacex",
+    "satellite",
+    "lunar",
+    "mars",
+    "asteroid",
+    "astronaut",
+    "cosmos",
+    "cosmic",
+    "astrophysics",
+    "jwst"
+  ],
+  business: [
+    "earnings",
+    "revenue",
+    "profit",
+    "sales",
+    "spending",
+    "quarterly",
+    "shares",
+    "stock",
+    "stocks",
+    "investor",
+    "investors",
+    "market",
+    "markets",
+    "nasdaq",
+    "nyse",
+    "merger",
+    "acquisition",
+    "cfo",
+    "ceo",
+    "valuation",
+    "inflation",
+    "interest rates",
+    "federal reserve",
+    "central bank",
+    "economy",
+    "commercial",
+    "corporate",
+    "finance",
+    "financial",
+    "monetary",
+    "bank",
+    "banking",
+    "rate",
+    "rates",
+    "energy",
+    "reserves",
+    "stockpiles",
+    "industry",
+    "funds"
+  ],
+  world: [
+    "international",
+    "united nations",
+    "border",
+    "refugee",
+    "summit",
+    "global",
+    "peacekeeping",
+    "treaty",
+    "embassy",
+    "foreign affairs",
+    "conflict",
+    "bilateral",
+    "geopolitics",
+    "crisis",
+    "president",
+    "prime minister",
+    "senate",
+    "congress",
+    "parliament",
+    "government",
+    "diplomat",
+    "sanctions",
+    "sovereignty",
+    "election",
+    "vote",
+    "legislation",
+    "white house",
+    "kremlin",
+    "downing street"
+  ],
+  entertainment: [
+    "movie",
+    "movies",
+    "film",
+    "films",
+    "cinema",
+    "theatre",
+    "actor",
+    "actress",
+    "director",
+    "oscar",
+    "oscars",
+    "music",
+    "album",
+    "concert",
+    "grammy",
+    "hollywood",
+    "box office",
+    "celebrity",
+    "streaming series",
+    "art",
+    "museum",
+    "painting"
+  ],
+  // Legacy / non-platform categories for fixture compatibility
+  sports: [
+    "tournament",
+    "championship",
+    "cup",
+    "league",
+    "player",
+    "team",
+    "coach",
+    "goal",
+    "score",
+    "stadium",
+    "football",
+    "soccer",
+    "basketball",
+    "nba",
+    "fifa",
+    "olympic",
+    "tennis",
+    "baseball",
+    "cricket"
+  ],
+  culture: [
+    "museum",
+    "exhibition",
+    "painting",
+    "novel",
+    "author",
+    "literature",
+    "festival",
+    "art"
+  ],
+  health: [
+    "medical",
+    "hospital",
+    "doctor",
+    "patient",
+    "disease",
+    "virus",
+    "infection",
+    "cancer",
+    "treatment",
+    "drug",
+    "fda",
+    "clinical trial",
+    "surgery",
+    "vaccine"
+  ],
+  climate: [
+    "climate",
+    "global warming",
+    "emissions",
+    "carbon",
+    "greenhouse",
+    "renewable",
+    "solar",
+    "wind energy",
+    "glacier",
+    "sea level",
+    "drought",
+    "wildfire",
+    "biodiversity",
+    "cop28",
+    "cop29",
+    "fossil fuels",
+    "natural gas",
+    "gas",
+    "energy"
+  ]
 };
 var COMPATIBLE_PAIRS = {
-  business: ["tech", "world", "politics", "climate"],
-  tech: ["business", "science"],
-  science: ["tech", "health", "climate"],
+  // AI is genuinely adjacent to general technology, cybersecurity, hardware, and science
+  ai: ["technology", "cybersecurity", "hardware", "science"],
+  // Technology is genuinely adjacent to its sub-disciplines and partner sectors
+  technology: ["ai", "hardware", "cybersecurity", "apps", "science", "business"],
+  hardware: ["technology", "ai", "gaming", "science"],
+  cybersecurity: ["technology", "ai", "apps", "world"],
+  apps: ["technology", "entertainment"],
+  gaming: ["entertainment", "hardware"],
+  science: ["space", "health", "climate", "technology", "ai"],
+  space: ["science", "technology"],
+  business: ["technology", "world", "politics", "climate"],
   world: ["politics", "business", "climate"],
+  entertainment: ["gaming", "culture", "apps"],
+  // Legacy mappings for backwards-compatible test fixtures
   politics: ["world", "business"],
   health: ["science"],
   climate: ["science", "world", "politics", "business"]
 };
 var INCOMPATIBLE_CATEGORIES = {
-  sports: ["science", "politics", "climate", "business"],
+  sports: ["science", "politics", "climate", "business", "ai", "technology", "world"],
   culture: ["business", "science"],
   science: ["sports", "culture"],
-  business: ["sports", "culture"]
+  business: ["sports", "culture"],
+  ai: ["sports", "culture", "lifestyle", "gaming"],
+  gaming: ["politics", "climate", "sports", "world", "ai"]
 };
+
+// src/services/validation/deterministicValidators.ts
 function validateSourceUrl(url) {
   if (!url || typeof url !== "string" || url.trim().length === 0) {
     return { valid: false, reason: "Source URL is missing or empty" };
@@ -3139,20 +3563,28 @@ function validateSourceUrl(url) {
   }
 }
 function validateCategoryHeuristic(extractedCategory, title, sourceText, summary = "") {
-  const normCategory = (extractedCategory || "").toLowerCase().trim();
+  const normCategory = normalizeCategory(extractedCategory);
   const sourceLower = sourceText.toLowerCase();
   const sourceScores = {};
   for (const [cat, kws] of Object.entries(CATEGORY_KEYWORDS)) {
     let matches = 0;
     for (const kw of kws) {
-      if (sourceLower.includes(kw)) {
-        matches++;
+      if (kw.length <= 4) {
+        const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(`\\b${escaped}\\b`, "i");
+        if (regex.test(sourceLower)) {
+          matches++;
+        }
+      } else {
+        if (sourceLower.includes(kw)) {
+          matches++;
+        }
       }
     }
     sourceScores[cat] = matches;
   }
   let bestCategory = normCategory;
-  let maxScore = -1;
+  let maxScore = sourceScores[normCategory] || 0;
   for (const [cat, score] of Object.entries(sourceScores)) {
     if (score > maxScore) {
       maxScore = score;
@@ -3174,7 +3606,7 @@ function validateCategoryHeuristic(extractedCategory, title, sourceText, summary
       expectedCategory: bestCategory,
       extractedCategory: normCategory,
       status: "acceptable",
-      confidence: 0.8
+      confidence: 0.85
     };
   }
   const incompatibleWith = INCOMPATIBLE_CATEGORIES[normCategory] || [];
@@ -11935,6 +12367,13 @@ export {
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * Canonical Category Taxonomy & Normalization Layer
  */
 /**
  * @license
