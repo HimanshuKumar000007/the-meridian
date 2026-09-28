@@ -49,7 +49,7 @@ export interface ExtractionLLMProvider {
 }
 
 const DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1';
-const DEFAULT_MODEL = 'meta/llama-3.3-70b-instruct';
+const DEFAULT_MODEL = 'meta/llama-3.2-11b-vision-instruct';
 const DEFAULT_TIMEOUT_MS = 25000;
 const DEFAULT_TEMPERATURE = 0.1;
 const DEFAULT_MAX_TOKENS = 3500;

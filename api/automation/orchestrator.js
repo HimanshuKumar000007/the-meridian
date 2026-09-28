@@ -2521,7 +2521,7 @@ ${userPrompt}`,
 
 // src/services/extraction/NvidiaClient.ts
 var DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
-var DEFAULT_MODEL = "meta/llama-3.3-70b-instruct";
+var DEFAULT_MODEL = "meta/llama-3.2-11b-vision-instruct";
 var DEFAULT_TIMEOUT_MS3 = 25e3;
 var DEFAULT_TEMPERATURE = 0.1;
 var DEFAULT_MAX_TOKENS = 3500;
