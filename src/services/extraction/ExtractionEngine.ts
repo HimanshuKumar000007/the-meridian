@@ -129,6 +129,29 @@ export class ExtractionEngine {
         parsedObj = JSON.parse(retryCorrection.rawJson);
       }
 
+      // Normalize enum fields before schema validation (case-insensitivity, whitespace)
+      if (parsedObj && typeof parsedObj === 'object') {
+        if (typeof parsedObj.category === 'string') {
+          parsedObj.category = parsedObj.category.toLowerCase().trim();
+          if (parsedObj.category === 'artificial intelligence' || parsedObj.category === 'genai') {
+            parsedObj.category = 'ai';
+          }
+        }
+        if (typeof parsedObj.status === 'string') {
+          parsedObj.status = parsedObj.status.toLowerCase().trim();
+        }
+        if (typeof parsedObj.confidenceLevel === 'string') {
+          parsedObj.confidenceLevel = parsedObj.confidenceLevel.toLowerCase().trim();
+        }
+        if (Array.isArray(parsedObj.entities)) {
+          for (const ent of parsedObj.entities) {
+            if (ent && typeof ent.type === 'string') {
+              ent.type = ent.type.toLowerCase().trim();
+            }
+          }
+        }
+      }
+
       // Schema Validation via Zod
       const parseResult = ExtractedPayloadSchema.safeParse(parsedObj);
       if (!parseResult.success) {

@@ -75,8 +75,8 @@ async function runPhase6TestSuite() {
     sourceType: 'rss',
     canonicalUrl: 'http://127.0.0.1:59999/nonexistent-path',
     sourceUrl: 'http://127.0.0.1:59999/nonexistent-path',
-    title: 'Fallback Headline for Offline Testing',
-    description: 'Fallback description provided by the discovery RSS feed when the source webpage is unreachable.',
+    title: 'Fallback Headline',
+    description: 'Fallback description for offline unreachable test.',
     publishedAt: '2026-09-27T00:00:00Z',
     discoveredAt: '2026-09-27T01:00:00Z',
     lastSeenAt: '2026-09-27T01:00:00Z',
@@ -88,7 +88,9 @@ async function runPhase6TestSuite() {
 
   const fallbackResult = await acquisition.acquireContent(unroutableItem);
   assert(
-    fallbackResult.fetchStatus === 'fallback_metadata' || fallbackResult.fetchStatus === 'insufficient_input',
+    fallbackResult.fetchStatus === 'fallback_metadata' ||
+      fallbackResult.fetchStatus === 'insufficient_input' ||
+      fallbackResult.fetchStatus === 'blocked',
     'Test 2: Unreachable source URL falls back safely to discovery metadata'
   );
   assert(
@@ -331,6 +333,167 @@ async function runPhase6TestSuite() {
       'Test 12e: Confirmation — Public stories table was NOT modified or populated by extraction engine',
       `Published stories count remains exactly 19`
     );
+  }
+
+  // ----------------------------------------------------
+  // TEST 13: Deep Source Recovery for Short RSS Items (8 Core Scenarios)
+  // ----------------------------------------------------
+  console.log('\n--- Deep Source Recovery Verification (8 Core Scenarios) ---');
+  const recoveryService = new SourceContentAcquisitionService({ timeoutMs: 3000 });
+  const originalFetch = globalThis.fetch;
+
+  try {
+    // 1. RSS text >= 120 -> no extra fetch required
+    const longRssItem: DiscoveryItem = {
+      id: 'disc-long-01',
+      sourceId: 'src-test',
+      sourceName: 'Consortium News',
+      sourceType: 'rss',
+      canonicalUrl: 'https://example.org/sufficient-story',
+      sourceUrl: 'https://example.org/sufficient-story',
+      title: 'Major Breakthrough in Clean Fusion Energy Announced by International Consortium',
+      description:
+        'Scientists at the National Ignition Facility and international partner laboratories have achieved a sustained net energy gain in a magnetic confinement fusion reaction.',
+      publishedAt: '2026-09-28T00:00:00Z',
+      discoveredAt: '2026-09-28T00:00:00Z',
+      lastSeenAt: '2026-09-28T00:00:00Z',
+      fingerprint: 'fp-long-01',
+      contentHash: 'hash-long-01',
+      status: 'candidate',
+    };
+    const c1 = await recoveryService.acquireContent(longRssItem);
+    assert(c1.fetchStatus === 'sufficient_metadata', 'Test 13.1: RSS text >= 120 requires no extra fetch');
+    assert(c1.durationMs === 0, 'Test 13.1b: Returns immediately without network latency');
+    assert(c1.articleText.length >= 120, 'Test 13.1c: Sufficient source text preserved');
+
+    // 2. RSS text < 120 + original article available -> fetch original article -> sourceText becomes sufficient
+    let fetchCount = 0;
+    globalThis.fetch = (async (url: string, init?: any) => {
+      fetchCount++;
+      return new Response(
+        '<!DOCTYPE html><html><head><title>Full Tech Report</title></head><body><article><p>This is the full substantive article content recovered from the original source page containing detailed facts, metrics, and quotes.</p><p>Second paragraph explaining the technological architecture and operational parameters across global compute nodes.</p></article></body></html>',
+        { status: 200, headers: { 'Content-Type': 'text/html' } }
+      );
+    }) as any;
+
+    const shortRssItem: DiscoveryItem = {
+      id: 'disc-short-01',
+      sourceId: 'src-test',
+      sourceName: 'Short RSS Wire',
+      sourceType: 'rss',
+      canonicalUrl: 'https://news.example.com/deep-article',
+      sourceUrl: 'https://news.example.com/deep-article',
+      title: 'Brief Announcement',
+      description: 'Short snippet.',
+      publishedAt: '2026-09-28T00:00:00Z',
+      discoveredAt: '2026-09-28T00:00:00Z',
+      lastSeenAt: '2026-09-28T00:00:00Z',
+      fingerprint: 'fp-short-01',
+      contentHash: 'hash-short-01',
+      status: 'candidate',
+    };
+    recoveryService.clearCache();
+    const c2 = await recoveryService.acquireContent(shortRssItem);
+    assert(c2.fetchStatus === 'deep_fetch_success', 'Test 13.2: Short RSS item triggers deep fetch and succeeds');
+    assert(c2.articleText.length >= 120, 'Test 13.2b: Recovered article text becomes sufficient (>= 120 chars)');
+    assert(c2.articleText.includes('full substantive article content'), 'Test 13.2c: Article body cleanly extracted');
+
+    // 3. RSS text < 120 + original article unavailable (HTTP 404) -> safe fallback, stays insufficient
+    globalThis.fetch = (async () => {
+      return new Response('Not Found', { status: 404, statusText: 'Not Found' });
+    }) as any;
+
+    recoveryService.clearCache();
+    const c3 = await recoveryService.acquireContent({
+      ...shortRssItem,
+      canonicalUrl: 'https://news.example.com/missing-page',
+    });
+    assert(c3.fetchStatus === 'fallback_metadata' || c3.fetchStatus === 'insufficient_input', 'Test 13.3: Unavailable source returns fallback metadata');
+    assert(Boolean(c3.error?.includes('SOURCE_UNAVAILABLE')), 'Test 13.3b: Error records SOURCE_UNAVAILABLE');
+    assert(c3.articleText.length < 120, 'Test 13.3c: Text stays < 120 so validation safely holds as insufficient_evidence');
+
+    // 4. RSS text < 120 + source blocked (HTTP 403) -> safe fallback, stays insufficient
+    globalThis.fetch = (async () => {
+      return new Response('Forbidden', { status: 403, statusText: 'Forbidden' });
+    }) as any;
+
+    recoveryService.clearCache();
+    const c4 = await recoveryService.acquireContent({
+      ...shortRssItem,
+      canonicalUrl: 'https://news.example.com/paywall-page',
+    });
+    assert(Boolean(c4.error?.includes('SOURCE_BLOCKED')), 'Test 13.4: Blocked source returns SOURCE_BLOCKED');
+    assert(c4.articleText.length < 120, 'Test 13.4b: Text stays < 120 so validation safely holds as insufficient_evidence');
+
+    // 5. Source returns unrelated / empty / spam HTML -> reject as unusable
+    globalThis.fetch = (async () => {
+      return new Response('<html><body><div>Access Denied. Please enable JavaScript to continue.</div></body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }) as any;
+
+    recoveryService.clearCache();
+    const c5 = await recoveryService.acquireContent({
+      ...shortRssItem,
+      canonicalUrl: 'https://news.example.com/unrelated-page',
+    });
+    assert(Boolean(c5.error?.includes('UNRELATED_OR_EMPTY_HTML')), 'Test 13.5: Unrelated or boilerplate HTML rejected as unusable');
+    assert(c5.articleText.length < 120, 'Test 13.5b: Text stays < 120 preserving insufficient_evidence guardrail');
+
+    // 6. Source fetch timeout -> safe fallback
+    globalThis.fetch = (async () => {
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      throw err;
+    }) as any;
+
+    recoveryService.clearCache();
+    const c6 = await recoveryService.acquireContent({
+      ...shortRssItem,
+      canonicalUrl: 'https://news.example.com/slow-page',
+    });
+    assert(Boolean(c6.error?.includes('FETCH_TIMEOUT')), 'Test 13.6: Fetch timeout caught cleanly with FETCH_TIMEOUT');
+    assert(c6.statusCode === 408, 'Test 13.6b: HTTP 408 status recorded for timeout');
+
+    // 7. Duplicate fetch attempt -> deduplicated
+    let liveCalls = 0;
+    globalThis.fetch = (async () => {
+      liveCalls++;
+      return new Response(
+        '<!DOCTYPE html><html><body><article><p>Deduplicated content fetched exactly once from the remote origin server for testing cache.</p></article></body></html>',
+        { status: 200, headers: { 'Content-Type': 'text/html' } }
+      );
+    }) as any;
+
+    recoveryService.clearCache();
+    const url = 'https://news.example.com/dedup-article';
+    const itemA = { ...shortRssItem, canonicalUrl: url };
+    const itemB = { ...shortRssItem, canonicalUrl: url };
+
+    const [resA, resB] = await Promise.all([
+      recoveryService.acquireContent(itemA),
+      recoveryService.acquireContent(itemB),
+    ]);
+    assert(liveCalls === 1, 'Test 13.7: Concurrent duplicate fetch requests deduplicated into single remote call');
+    assert(resA.articleText === resB.articleText, 'Test 13.7b: Both callers received identical cached result');
+
+    // 8. Malicious / Unsafe source URL -> blocked (SSRF Protection)
+    let reachedFetch = false;
+    globalThis.fetch = (async () => {
+      reachedFetch = true;
+      return new Response('ok');
+    }) as any;
+
+    recoveryService.clearCache();
+    const c8 = await recoveryService.acquireContent({
+      ...shortRssItem,
+      canonicalUrl: 'http://169.254.169.254/latest/meta-data/',
+    });
+    assert(Boolean(c8.error?.includes('URL_BLOCKED_UNSAFE')), 'Test 13.8: Private metadata IP blocked by SSRF guard');
+    assert(!reachedFetch, 'Test 13.8b: Fetch was NEVER invoked for unsafe URL target');
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 
   console.log('\n====================================================');

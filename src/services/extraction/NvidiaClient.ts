@@ -50,9 +50,9 @@ export interface ExtractionLLMProvider {
 
 const DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 const DEFAULT_MODEL = 'meta/llama-3.2-11b-vision-instruct';
-const DEFAULT_TIMEOUT_MS = 25000;
+const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_TEMPERATURE = 0.1;
-const DEFAULT_MAX_TOKENS = 3500;
+const DEFAULT_MAX_TOKENS = 2500;
 
 /**
  * Server-Side NVIDIA AI Inference Client.
@@ -172,8 +172,6 @@ export class NvidiaClient implements ExtractionLLMProvider {
             ],
             temperature: this.temperature,
             max_tokens: this.maxTokens,
-            // If model supports response_format, enforce json_object
-            response_format: { type: 'json_object' },
           }),
           signal: controller.signal,
         });

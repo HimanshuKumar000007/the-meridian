@@ -167,7 +167,7 @@ export class SupabaseExtractionRepository implements ExtractionRepository {
       }
 
       const maxLimit = options?.limit || 20;
-      query = query.limit(maxLimit * 3); // fetch enough to filter out extracted ones
+      query = query.limit(Math.max(maxLimit * 10, 100)); // fetch enough to filter out extracted ones
 
       const { data, error } = await query;
       if (error) {

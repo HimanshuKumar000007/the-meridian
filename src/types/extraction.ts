@@ -163,7 +163,7 @@ export interface AcquiredSourceContent {
   articleText: string;
   wordCount: number;
   isTruncated: boolean;
-  fetchStatus: 'success' | 'fallback_metadata' | 'insufficient_input';
+  fetchStatus: 'success' | 'fallback_metadata' | 'insufficient_input' | 'sufficient_metadata' | 'deep_fetch_success' | 'blocked';
   statusCode?: number;
   durationMs: number;
   error?: string;
