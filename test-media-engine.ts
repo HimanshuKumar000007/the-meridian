@@ -325,12 +325,32 @@ async function runTestSuite() {
   }
 
   // ----------------------------------------------------
-  // Scenario 13: HTML disguised as image -> rejected
+  // Scenario 13: HTML disguised as image -> rejected & SVG Security Audit
   // ----------------------------------------------------
   {
     const disguisedHtmlBuffer = Buffer.from('<!DOCTYPE html><html><body>Error 404 Not Found</body></html>', 'utf-8');
     const detectedMime = securityService.detectMimeType(disguisedHtmlBuffer);
     assert(detectedMime === null, 'Scenario 13: HTML buffer rejected (not valid image MIME)');
+
+    // SVG Security Audit: Verify public SVG cannot execute arbitrary scripts or active HTML
+    const maliciousSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" onload="alert(document.domain)">
+      <script>fetch('/api/admin/exfiltrate?cookie=' + document.cookie);</script>
+      <foreignObject width="100" height="100"><iframe src="javascript:alert(1)"></iframe></foreignObject>
+      <a href="javascript:alert('xss')"><text y="20">Click Me</text></a>
+      <rect width="100" height="100" fill="red" onclick="alert(1)" />
+    </svg>`;
+
+    assert(!securityService.isSvgSafe(maliciousSvg), 'Scenario 13: Malicious SVG detected as unsafe');
+    const sanitized = securityService.sanitizeSvg(maliciousSvg);
+    assert(!sanitized.includes('<script'), 'Scenario 13: Scripts stripped from sanitized SVG');
+    assert(!sanitized.includes('onload='), 'Scenario 13: Event handlers stripped from sanitized SVG');
+    assert(!sanitized.includes('<foreignObject'), 'Scenario 13: foreignObject stripped from sanitized SVG');
+    assert(!sanitized.includes('javascript:'), 'Scenario 13: javascript: URIs stripped from sanitized SVG');
+    assert(securityService.isSvgSafe(sanitized), 'Scenario 13: Sanitized SVG verified safe from active HTML/scripts');
+
+    // Clean SVG verified safe
+    const cleanSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="blue" /></svg>`;
+    assert(securityService.isSvgSafe(cleanSvg), 'Scenario 13: Pure static SVG verified safe');
   }
 
   // ----------------------------------------------------

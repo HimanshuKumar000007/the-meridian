@@ -7,6 +7,7 @@
  */
 
 import type { MediaAsset } from '../../types/media';
+import { MediaSecurityService } from './MediaSecurityService';
 
 export class FallbackMediaService {
   /**
@@ -67,8 +68,10 @@ export class FallbackMediaService {
    * Produces a fully formed MediaAsset object representing the safe fallback.
    */
   public createFallbackAsset(storyId: string, category: string, title?: string): MediaAsset {
-    const svg = this.generateFallbackSvg(category, title);
-    const base64 = Buffer.from(svg).toString('base64');
+    const rawSvg = this.generateFallbackSvg(category, title);
+    const security = new MediaSecurityService();
+    const sanitizedSvg = security.sanitizeSvg(rawSvg);
+    const base64 = Buffer.from(sanitizedSvg).toString('base64');
     const dataUrl = `data:image/svg+xml;base64,${base64}`;
     const now = new Date().toISOString();
 

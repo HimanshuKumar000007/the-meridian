@@ -10,6 +10,7 @@
 import { createHash } from 'crypto';
 import type { MediaAsset, MediaPolicyConfig } from '../../types/media';
 import { MediaPolicyService, DEFAULT_MEDIA_POLICY_CONFIG } from './MediaPolicyService';
+import { MediaSecurityService } from './MediaSecurityService';
 
 export interface GenerationOptions {
   aspectRatio?: '16:9' | '4:3' | '1:1';
@@ -73,7 +74,9 @@ export class MockImageGenerationProvider implements ImageGenerationProvider {
   </g>
 </svg>`;
 
-    const base64 = Buffer.from(svg).toString('base64');
+    const security = new MediaSecurityService();
+    const sanitizedSvg = security.sanitizeSvg(svg);
+    const base64 = Buffer.from(sanitizedSvg).toString('base64');
     const url = `data:image/svg+xml;base64,${base64}`;
 
     return {

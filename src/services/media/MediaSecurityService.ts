@@ -235,12 +235,10 @@ export class MediaSecurityService {
         throw new Error('Downloaded file is not a supported image format or contains invalid binary data');
       }
 
-      // Reject disguised HTML or executable SVG scripts
+      // Reject external SVG images: SVG is disabled as a public stored format from remote sources
+      // News photography and hero media strictly require raster formats (JPEG, PNG, WebP, AVIF)
       if (detectedMime === 'image/svg+xml') {
-        const svgContent = buffer.toString('utf8');
-        if (/<script\b/i.test(svgContent) || /onload\s*=/i.test(svgContent) || /javascript:/i.test(svgContent)) {
-          throw new Error('SVG image contains executable scripts or handlers and is rejected for security');
-        }
+        throw new Error('External SVG images are disabled as a public stored format for security; news media requires raster formats');
       }
 
       const contentHash = createHash('sha256').update(buffer).digest('hex');
@@ -254,5 +252,60 @@ export class MediaSecurityService {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * Sanitizes SVG content before delivery.
+   * Strips scripts, foreignObject, iframes, objects, embeds, applets, inline event handlers,
+   * javascript: URIs, DOCTYPE, and ENTITY declarations to prevent XSS and XXE.
+   */
+  public sanitizeSvg(rawSvg: string): string {
+    if (!rawSvg || typeof rawSvg !== 'string') return '';
+
+    return rawSvg
+      // Strip XML declarations and DOCTYPE (prevents XXE / entity expansion / Billion Laughs)
+      .replace(/<\?xml[\s\S]*?\?>/gi, '')
+      .replace(/<!DOCTYPE[\s\S]*?>/gi, '')
+      .replace(/<!ENTITY[\s\S]*?>/gi, '')
+      // Strip <script> tags and any contents
+      .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+      .replace(/<script\b[^>]*\/>/gi, '')
+      // Strip <foreignObject> tags and contents (prevents HTML/DOM XSS)
+      .replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, '')
+      .replace(/<foreignObject\b[^>]*\/>/gi, '')
+      // Strip dangerous embedding tags
+      .replace(/<(iframe|object|embed|applet|meta|link|base)\b[\s\S]*?<\/\1>/gi, '')
+      .replace(/<(iframe|object|embed|applet|meta|link|base)\b[^>]*\/>/gi, '')
+      // Strip inline event handlers (onload, onerror, onclick, onmouseover, etc.)
+      .replace(/\s+on[a-z]+\s*=\s*(["'][^"']*["']|[^\s>]+)/gi, '')
+      // Strip dangerous URI schemes in href / xlink:href
+      .replace(/(href|xlink:href)\s*=\s*["']\s*(javascript|vbscript|data):[^"']*["']/gi, '')
+      // Neutralize active expressions in style tags
+      .replace(/<style\b[\s\S]*?<\/style>/gi, (match) => {
+        if (/expression\s*\(|@import|behavior\s*:/i.test(match)) {
+          return '';
+        }
+        return match;
+      });
+  }
+
+  /**
+   * Verifies if an SVG string is completely clean of any active scripts or HTML injection.
+   */
+  public isSvgSafe(svgText: string): boolean {
+    if (!svgText || typeof svgText !== 'string') return false;
+    const dangerousPatterns = [
+      /<script\b/i,
+      /<foreignObject\b/i,
+      /<iframe\b/i,
+      /<object\b/i,
+      /<embed\b/i,
+      /<applet\b/i,
+      /\bon[a-z]+\s*=/i,
+      /(?:href|xlink:href)\s*=\s*["']\s*(?:javascript|vbscript):/i,
+      /<!ENTITY/i,
+      /<!DOCTYPE/i,
+    ];
+    return !dangerousPatterns.some((pattern) => pattern.test(svgText));
   }
 }
