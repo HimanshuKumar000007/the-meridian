@@ -328,7 +328,7 @@ describe('Phase 12: Production SEO, Google Search & Google News Readiness', () =
   // 9. Production Invariants & Database Preservation
   // ==========================================
   describe('9. Production Invariants & Database Preservation', () => {
-    it('verifies published stories count in Supabase remains strictly preserved at 19', async () => {
+    it('verifies published stories count in Supabase remains strictly preserved at 20', async () => {
       try {
         if (!supabase) {
           console.warn('Supabase not configured, skipping DB invariant check');
@@ -348,8 +348,8 @@ describe('Phase 12: Production SEO, Google Search & Google News Readiness', () =
 
         assert.equal(
           data.length,
-          19,
-          `CRITICAL INVARIANT VIOLATION: Expected exactly 19 published stories in Supabase, found ${data.length}`
+          20,
+          `CRITICAL INVARIANT VIOLATION: Expected exactly 20 published stories in Supabase, found ${data.length}`
         );
       } catch (err: any) {
         console.warn('Network exception during Supabase invariant check:', err.message);

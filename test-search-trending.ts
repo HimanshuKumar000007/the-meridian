@@ -265,12 +265,12 @@ async function runTests() {
     const supabase = getSupabaseClient();
     const sbRepo = new SupabaseSearchRepository(supabase);
 
-    // 1. Verify Invariant: Published stories count must remain 19
+    // 1. Verify Invariant: Published stories count must remain 20
     const { count: pubCount } = await supabase
       .from('stories')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'published');
-    assert(pubCount === 19, `Database Invariant Check: Exactly 19 published stories (found: ${pubCount})`);
+    assert(pubCount === 20, `Database Invariant Check: Exactly 20 published stories (found: ${pubCount})`);
 
     // 2. Test Live Database Search via RPC
     const liveSearch = await sbRepo.searchStories('OpenAI');
@@ -330,7 +330,7 @@ async function runTests() {
       .from('stories')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'published');
-    assert(finalPubCount === 19, `Database Invariant Preserved: Still 19 published stories (found: ${finalPubCount})`);
+    assert(finalPubCount === 20, `Database Invariant Preserved: Still 20 published stories (found: ${finalPubCount})`);
   } else {
     console.log('  \x1b[33m[SKIPPED]\x1b[0m Supabase credentials not found. Skipped live DB tests.');
   }

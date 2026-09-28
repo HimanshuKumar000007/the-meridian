@@ -312,15 +312,15 @@ async function runPhase8TestSuite() {
       'Test 9f: Anonymous user CANNOT select from story_lifecycle_events (RLS secured)'
     );
 
-    // 6. CRITICAL PUBLISHED INVARIANT: Exactly 19 Published Stories
+    // 6. CRITICAL PUBLISHED INVARIANT: Exactly 20 Published Stories
     const { count: publishedCount, error: countErr } = await serviceClient
       .from('stories')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'published');
 
     assert(
-      countErr === null && publishedCount === 19,
-      'Test 9g: CRITICAL INVARIANT: published stories count is EXACTLY 19 (NEVER modified by Phase 8)'
+      countErr === null && publishedCount === 20,
+      'Test 9g: CRITICAL INVARIANT: published stories count is EXACTLY 20 (NEVER modified by Phase 8)'
     );
   } else {
     console.log('ℹ️  Supabase credentials not configured, skipped live DB tests.');

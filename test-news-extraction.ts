@@ -329,9 +329,9 @@ async function runPhase6TestSuite() {
       .select('id', { count: 'exact' })
       .eq('status', 'published');
     assert(
-      storiesCount !== null && storiesCount === 19,
+      storiesCount !== null && storiesCount === 20,
       'Test 12e: Confirmation — Public stories table was NOT modified or populated by extraction engine',
-      `Published stories count remains exactly 19`
+      `Published stories count remains exactly 20`
     );
   }
 

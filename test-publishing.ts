@@ -469,12 +469,12 @@ async function runTests() {
         .in('status', ['draft', 'held']);
       assert(!draftData || draftData.length === 0, 'Test 8d: Anonymous user CANNOT view draft or held stories (RLS protected)');
 
-      // Test 8e: Critical Invariant: published stories count is EXACTLY 19
+      // Test 8e: Critical Invariant: published stories count is EXACTLY 20
       const { count: pubCount, error: countErr } = await anonClient
         .from('stories')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'published');
-      assert(countErr === null && pubCount === 19, `Test 8e: CRITICAL INVARIANT: published stories count is EXACTLY 19 (Found: ${pubCount})`);
+      assert(countErr === null && pubCount === 20, `Test 8e: CRITICAL INVARIANT: published stories count is EXACTLY 20 (Found: ${pubCount})`);
     } else {
       console.log('Skipping live anon RLS tests (VITE_SUPABASE_ANON_KEY not set).');
     }
