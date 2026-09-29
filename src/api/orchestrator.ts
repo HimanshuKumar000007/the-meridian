@@ -16,6 +16,7 @@ import { StageRunnerService } from '../services/automation/StageRunnerService';
 import { SupabaseAutomationRepository } from '../data/repositories/SupabaseAutomationRepository';
 import { AutomationConfigService } from '../services/automation/AutomationConfigService';
 import { MonitoringService } from '../services/monitoring/MonitoringService';
+import { getSiteUrl } from '../config/seoConfig';
 import type { AutomationStage, AutomationTrigger } from '../types/automation';
 
 export const config = {
@@ -116,7 +117,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ) as AutomationStage[])
       : undefined;
 
-    const monitoringService = new MonitoringService({ client: supabase });
+    const monitoringService = new MonitoringService({
+      client: supabase,
+      skipNetworkFetch: true,
+      baseUrl: getSiteUrl(),
+    });
 
     const result = await orchestrator.orchestrate({
       trigger,

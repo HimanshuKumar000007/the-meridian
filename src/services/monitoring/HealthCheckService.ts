@@ -46,7 +46,7 @@ export class HealthCheckService {
       options.baseUrl ||
       (typeof process !== 'undefined' && process.env.DEPLOYED_URL) ||
       (typeof process !== 'undefined' && process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined) ||
-      'https://the-meridian-aptionaiged-4225.vercel.app';
+      'https://themeridian.in';
     this.skipNetworkFetch = options.skipNetworkFetch || false;
   }
 

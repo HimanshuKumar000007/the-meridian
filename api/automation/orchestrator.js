@@ -258,10 +258,12 @@ var PipelineOrchestrator = class {
       }
     }
     try {
-      const schedules = await this.repository.getSchedules();
+      const [schedules, queueDepths, oldestPendingAges] = await Promise.all([
+        this.repository.getSchedules(),
+        this.repository.getQueueDepths(),
+        this.repository.getOldestPendingAges()
+      ]);
       const scheduleMap = new Map(schedules.map((s) => [s.stage, s]));
-      const queueDepths = await this.repository.getQueueDepths();
-      const oldestPendingAges = await this.repository.getOldestPendingAges();
       const pipelineStages = [
         "discovery",
         "extraction",
@@ -288,9 +290,9 @@ var PipelineOrchestrator = class {
           continue;
         }
         const schedule = scheduleMap.get(stage);
-        const stageLimit = options.limitOverride || config2.maxBatch[stage];
+        const stageLimit = options.limitOverride || (schedule?.maxBatchSize ? schedule.maxBatchSize : config2.maxBatch[stage]);
         const elapsedSinceStart = Date.now() - startTime;
-        const SERVERLESS_EXECUTION_BUDGET_MS = 48e3;
+        const SERVERLESS_EXECUTION_BUDGET_MS = 45e3;
         if (elapsedSinceStart >= SERVERLESS_EXECUTION_BUDGET_MS) {
           stageResults[stage] = {
             stage,
@@ -444,7 +446,7 @@ var PipelineOrchestrator = class {
         planCapability
       };
       const hookToRun = options.monitoringHook || this.monitoringHook;
-      if (!isDryRun && hookToRun) {
+      if (!isDryRun && hookToRun && Date.now() - startTime < 5e4) {
         try {
           await hookToRun(runResult);
         } catch (hookErr) {
@@ -2776,7 +2778,7 @@ ${userPrompt}`,
 // src/services/extraction/NvidiaClient.ts
 var DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 var DEFAULT_MODEL = "meta/llama-3.2-11b-vision-instruct";
-var DEFAULT_TIMEOUT_MS3 = 3e4;
+var DEFAULT_TIMEOUT_MS3 = 25e3;
 var DEFAULT_TEMPERATURE = 0.1;
 var DEFAULT_MAX_TOKENS = 2500;
 var NvidiaClient = class {
@@ -8469,6 +8471,9 @@ var StageRunnerService = class {
       let skipped = 0;
       const errors = [];
       for (const ext of pendingExtractions) {
+        if (Date.now() - started > 12e3 && (succeeded > 0 || skipped > 0 || failed > 0)) {
+          break;
+        }
         try {
           let sourceText = "";
           let sourceUrl = "";
@@ -8592,6 +8597,9 @@ var StageRunnerService = class {
       let skipped = 0;
       const errors = [];
       for (const item of candidates) {
+        if (Date.now() - started > 1e4 && (succeeded > 0 || skipped > 0 || failed > 0)) {
+          break;
+        }
         try {
           const decision = await engine.processCandidate(item.extraction, item.validation, {
             dryRun: false,
@@ -11982,7 +11990,7 @@ var PRODUCTION_CATEGORY_ROUTES = [
 var HealthCheckService = class {
   constructor(options = {}) {
     this.client = options.client;
-    this.baseUrl = options.baseUrl || typeof process !== "undefined" && process.env.DEPLOYED_URL || (typeof process !== "undefined" && process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : void 0) || "https://the-meridian-aptionaiged-4225.vercel.app";
+    this.baseUrl = options.baseUrl || typeof process !== "undefined" && process.env.DEPLOYED_URL || (typeof process !== "undefined" && process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : void 0) || "https://themeridian.in";
     this.skipNetworkFetch = options.skipNetworkFetch || false;
   }
   /**
@@ -13676,7 +13684,11 @@ async function handler(req, res) {
     const validatedStages = Array.isArray(stages) ? stages.filter(
       (s) => ["discovery", "extraction", "validation", "lifecycle", "publishing"].includes(s)
     ) : void 0;
-    const monitoringService = new MonitoringService({ client: supabase });
+    const monitoringService = new MonitoringService({
+      client: supabase,
+      skipNetworkFetch: true,
+      baseUrl: getSiteUrl()
+    });
     const result = await orchestrator.orchestrate({
       trigger,
       dryRun: Boolean(dryRun),

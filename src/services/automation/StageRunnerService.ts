@@ -304,6 +304,11 @@ export class StageRunnerService {
       const errors: string[] = [];
 
       for (const ext of pendingExtractions) {
+        // Guard serverless time budget: if validation exceeded 12 seconds and we already processed at least 1 item, stop batch cleanly
+        if (Date.now() - started > 12000 && (succeeded > 0 || skipped > 0 || failed > 0)) {
+          break;
+        }
+
         try {
           let sourceText = '';
           let sourceUrl = '';
@@ -453,6 +458,11 @@ export class StageRunnerService {
       const errors: string[] = [];
 
       for (const item of candidates) {
+        // Guard serverless time budget: if lifecycle exceeded 10 seconds and we already processed at least 1 item, stop batch cleanly
+        if (Date.now() - started > 10000 && (succeeded > 0 || skipped > 0 || failed > 0)) {
+          break;
+        }
+
         try {
           const decision = await engine.processCandidate(item.extraction, item.validation, {
             dryRun: false,
