@@ -39,7 +39,7 @@ export class AutomationConfigService {
       },
       maxBatch: {
         discovery: this.parseInt(process.env.DISCOVERY_MAX_BATCH, globalMaxBatch),
-        extraction: this.parseInt(process.env.EXTRACTION_MAX_BATCH, 5),
+        extraction: this.parseInt(process.env.EXTRACTION_MAX_BATCH, 2),
         validation: this.parseInt(process.env.VALIDATION_MAX_BATCH, 10),
         lifecycle: this.parseInt(process.env.LIFECYCLE_MAX_BATCH, 10),
         publishing: this.parseInt(process.env.PUBLISHING_MAX_BATCH, 5),

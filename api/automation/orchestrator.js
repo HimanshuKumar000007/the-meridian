@@ -80,7 +80,7 @@ var AutomationConfigService = class {
       },
       maxBatch: {
         discovery: this.parseInt(process.env.DISCOVERY_MAX_BATCH, globalMaxBatch),
-        extraction: this.parseInt(process.env.EXTRACTION_MAX_BATCH, 5),
+        extraction: this.parseInt(process.env.EXTRACTION_MAX_BATCH, 2),
         validation: this.parseInt(process.env.VALIDATION_MAX_BATCH, 10),
         lifecycle: this.parseInt(process.env.LIFECYCLE_MAX_BATCH, 10),
         publishing: this.parseInt(process.env.PUBLISHING_MAX_BATCH, 5)
@@ -188,7 +188,7 @@ var PipelineOrchestrator = class {
     const trigger = options.trigger || "cron";
     const isDryRun = Boolean(options.dryRun);
     const force = Boolean(options.force);
-    const config = this.configService.getConfig();
+    const config2 = this.configService.getConfig();
     const planCapability = this.capabilityService.getCapabilities();
     const stageResults = {
       discovery: null,
@@ -198,7 +198,7 @@ var PipelineOrchestrator = class {
       publishing: null
     };
     const errors = [];
-    if (!config.enabled) {
+    if (!config2.enabled) {
       const durationMs = Date.now() - startTime;
       return {
         runId,
@@ -217,7 +217,7 @@ var PipelineOrchestrator = class {
     let lockAcquired = false;
     const lockName = "master_orchestrator";
     if (!isDryRun) {
-      const lockRes = await this.lockService.acquire(lockName, runId, config.lockTtlSeconds);
+      const lockRes = await this.lockService.acquire(lockName, runId, config2.lockTtlSeconds);
       if (!lockRes.acquired) {
         const durationMs = Date.now() - startTime;
         return {
@@ -237,6 +237,11 @@ var PipelineOrchestrator = class {
         };
       }
       lockAcquired = true;
+      try {
+        await this.repository.recoverStaleRuns(config2.lockTtlSeconds * 2);
+      } catch (err) {
+        console.error("[PipelineOrchestrator] Failed to recover stale runs:", err);
+      }
     }
     if (!isDryRun) {
       try {
@@ -268,7 +273,7 @@ var PipelineOrchestrator = class {
         if (options.stages && options.stages.length > 0 && !options.stages.includes(stage)) {
           continue;
         }
-        if (!config.stageEnabled[stage]) {
+        if (!config2.stageEnabled[stage]) {
           stageResults[stage] = {
             stage,
             status: "disabled",
@@ -283,7 +288,7 @@ var PipelineOrchestrator = class {
           continue;
         }
         const schedule = scheduleMap.get(stage);
-        const stageLimit = options.limitOverride || config.maxBatch[stage];
+        const stageLimit = options.limitOverride || config2.maxBatch[stage];
         let isDue = force;
         if (!isDue && schedule) {
           if (!schedule.lastRunAt) {
@@ -333,10 +338,10 @@ var PipelineOrchestrator = class {
             lastRunAt: nowIso,
             nextDueAt
           };
-          if (result.status === "completed") {
+          if (result.status === "completed" || result.status === "partial" && result.succeeded > 0) {
             updates.lastSuccessAt = nowIso;
             updates.consecutiveFailures = 0;
-          } else if (result.status === "failed") {
+          } else if (result.status === "failed" || result.status === "partial" && result.succeeded === 0) {
             updates.lastFailureAt = nowIso;
             updates.consecutiveFailures = (schedule.consecutiveFailures || 0) + 1;
           }
@@ -2405,6 +2410,55 @@ Return a single JSON object with the following structure:
 }`;
 }
 
+// src/config/extractionRetryPolicy.ts
+var DEFAULT_MAX_EXTRACTION_RETRIES = 2;
+var DEAD_LETTER_ERROR_CODE = "DEAD_LETTER_MAX_RETRIES";
+function getMaxExtractionRetries() {
+  const envVal = process.env.EXTRACTION_MAX_RETRIES;
+  if (envVal) {
+    const parsed = parseInt(envVal, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return DEFAULT_MAX_EXTRACTION_RETRIES;
+}
+function parseExtractionRetryInfo(conflictDetails, errorCode) {
+  const defaultInfo = {
+    attempts: 1,
+    deadLettered: errorCode === DEAD_LETTER_ERROR_CODE,
+    lastAttemptAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (!conflictDetails) {
+    return defaultInfo;
+  }
+  try {
+    const parsed = JSON.parse(conflictDetails);
+    if (typeof parsed === "object" && parsed !== null) {
+      return {
+        attempts: Number(parsed.attempts) || 1,
+        deadLettered: Boolean(parsed.deadLettered) || errorCode === DEAD_LETTER_ERROR_CODE,
+        lastAttemptAt: parsed.lastAttemptAt || (/* @__PURE__ */ new Date()).toISOString(),
+        lastError: parsed.lastError || null
+      };
+    }
+  } catch {
+    const match = conflictDetails.match(/attempts?:?\s*(\d+)/i);
+    if (match) {
+      return {
+        attempts: parseInt(match[1], 10),
+        deadLettered: errorCode === DEAD_LETTER_ERROR_CODE,
+        lastAttemptAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+    }
+  }
+  return defaultInfo;
+}
+function shouldRetryExtraction(attempts, errorCode, maxRetries = getMaxExtractionRetries()) {
+  if (errorCode === DEAD_LETTER_ERROR_CODE) {
+    return false;
+  }
+  return attempts < maxRetries;
+}
+
 // src/services/extraction/ExtractionEngine.ts
 var ExtractionEngine = class {
   constructor(options) {
@@ -2518,6 +2572,21 @@ ${userPrompt}`,
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const candidateId = `ext-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     if (!validatedPayload) {
+      let previousAttempts = 0;
+      if (this.repository) {
+        try {
+          const existing = await this.repository.findExtraction(item.id, inputHash, promptVersion);
+          if (existing) {
+            const info = parseExtractionRetryInfo(existing.conflict_details, existing.error_code);
+            previousAttempts = info.attempts;
+          }
+        } catch {
+        }
+      }
+      const attemptCount = previousAttempts + 1;
+      const maxRetries = options.maxRetries ?? getMaxExtractionRetries();
+      const isDeadLetter = attemptCount >= maxRetries;
+      const finalErrorCode = isDeadLetter ? DEAD_LETTER_ERROR_CODE : errorCode;
       const failedRecord = {
         id: candidateId,
         discovery_item_id: item.id,
@@ -2525,13 +2594,22 @@ ${userPrompt}`,
         model: usedModel,
         prompt_version: promptVersion,
         input_hash: inputHash,
-        error_code: errorCode,
+        error_code: finalErrorCode,
         error_message: extractionError,
+        conflict_details: JSON.stringify({
+          attempts: attemptCount,
+          deadLettered: isDeadLetter,
+          lastAttemptAt: now,
+          lastError: extractionError
+        }),
         created_at: now,
         updated_at: now
       };
       if (!options.dryRun && this.repository) {
         await this.repository.saveExtraction(failedRecord);
+        if (isDeadLetter) {
+          await this.repository.updateDiscoveryItemStatus(item.id, "failed");
+        }
       }
       throw new Error(`[ExtractionEngine] Extraction failed for item ${item.id}: ${extractionError}`);
     }
@@ -2577,6 +2655,7 @@ ${userPrompt}`,
     if (!options.dryRun && this.repository) {
       const record = this.mapCandidateToRecord(candidate);
       await this.repository.saveExtraction(record);
+      await this.repository.updateDiscoveryItemStatus(item.id, "processed");
     }
     return candidate;
   }
@@ -2888,6 +2967,65 @@ var MockExtractionProvider = class {
   }
 };
 
+// src/config/discoveryRecencyPolicy.ts
+var DEFAULT_RECENCY_CONFIG = {
+  // General news feeds default window: 72 hours (3 days)
+  defaultMaxAgeHours: 72,
+  // Specific feed overrides
+  sourceMaxAgeHours: {
+    // OpenAI news feed contains historical posts dating to 2015; active window capped to 48 hours
+    "src-openai-news": 48,
+    "openai-news": 48,
+    // High-cadence breaking news feeds
+    "src-bbc-world": 48,
+    "bbc-world": 48,
+    "src-eurogamer": 48,
+    "eurogamer": 48,
+    // Slower-cadence journal / science feeds
+    "src-nature-news": 96,
+    "nature-news": 96,
+    "src-nasa-breaking": 72,
+    "nasa-breaking": 72
+  }
+};
+function getMaxAgeHoursForSource(sourceSlugOrId, config2 = DEFAULT_RECENCY_CONFIG) {
+  if (!sourceSlugOrId) {
+    return Number(process.env.DISCOVERY_RECENCY_MAX_HOURS) || config2.defaultMaxAgeHours;
+  }
+  const normalized = sourceSlugOrId.toLowerCase().trim();
+  if (config2.sourceMaxAgeHours[normalized] !== void 0) {
+    return config2.sourceMaxAgeHours[normalized];
+  }
+  return Number(process.env.DISCOVERY_RECENCY_MAX_HOURS) || config2.defaultMaxAgeHours;
+}
+function getRecencyCutoffIso(sourceSlugOrId, now = /* @__PURE__ */ new Date(), config2 = DEFAULT_RECENCY_CONFIG) {
+  const maxHours = getMaxAgeHoursForSource(sourceSlugOrId, config2);
+  const cutoffMs = now.getTime() - maxHours * 60 * 60 * 1e3;
+  return new Date(cutoffMs).toISOString();
+}
+function isWithinRecencyWindow(item, now = /* @__PURE__ */ new Date(), config2 = DEFAULT_RECENCY_CONFIG) {
+  const sourceKey = item.sourceSlug || item.sourceId;
+  const maxHours = getMaxAgeHoursForSource(sourceKey, config2);
+  const maxAgeMs = maxHours * 60 * 60 * 1e3;
+  const candidateDateStr = item.publishedAt || item.discoveredAt;
+  if (!candidateDateStr) {
+    return false;
+  }
+  const candidateTime = new Date(candidateDateStr).getTime();
+  if (isNaN(candidateTime)) {
+    return false;
+  }
+  const ageMs = now.getTime() - candidateTime;
+  if (ageMs > maxAgeMs) {
+    return false;
+  }
+  const twoHoursFuture = 2 * 60 * 60 * 1e3;
+  if (candidateTime - now.getTime() > twoHoursFuture) {
+    return false;
+  }
+  return true;
+}
+
 // src/data/repositories/SupabaseExtractionRepository.ts
 var SupabaseExtractionRepository = class {
   constructor(client2) {
@@ -2988,51 +3126,90 @@ var SupabaseExtractionRepository = class {
       return [];
     }
   }
+  async updateDiscoveryItemStatus(id, status) {
+    try {
+      const { error } = await this.client.from("news_discovery_items").update({
+        status,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      }).eq("id", id);
+      if (error) {
+        console.error(`[SupabaseExtractionRepository] updateDiscoveryItemStatus error for ${id}:`, error.message);
+      }
+    } catch (err) {
+      console.error(`[SupabaseExtractionRepository] updateDiscoveryItemStatus exception for ${id}:`, err.message);
+    }
+  }
   async getPendingDiscoveryItems(options) {
     try {
-      const { data: extractedRows } = await this.client.from("news_extractions").select("discovery_item_id").eq("status", "completed");
-      const extractedIds = new Set((extractedRows || []).map((r) => r.discovery_item_id));
-      let query = this.client.from("news_discovery_items").select("*, news_sources(slug, name, priority)").order("discovered_at", { ascending: false });
+      const maxRetries = options?.maxRetries ?? getMaxExtractionRetries();
+      const { data: extractionRows, error: extError } = await this.client.from("news_extractions").select("discovery_item_id, status, error_code, conflict_details");
+      if (extError) {
+        console.error("[SupabaseExtractionRepository] getPendingDiscoveryItems extractions query error:", extError.message);
+      }
+      const excludedIds = /* @__PURE__ */ new Set();
+      for (const row of extractionRows || []) {
+        if (row.status === "completed" || row.status === "needs_review") {
+          excludedIds.add(row.discovery_item_id);
+        } else if (row.status === "failed") {
+          const info = parseExtractionRetryInfo(row.conflict_details, row.error_code);
+          if (!shouldRetryExtraction(info.attempts, row.error_code, maxRetries)) {
+            excludedIds.add(row.discovery_item_id);
+          } else if (options?.includeFailed === false) {
+            excludedIds.add(row.discovery_item_id);
+          }
+        }
+      }
+      const recencyCutoff = getRecencyCutoffIso(options?.sourceSlug);
+      let query = this.client.from("news_discovery_items").select("*, news_sources(slug, name, priority)").in("status", ["new", "candidate"]).or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`).order("discovered_at", { ascending: false });
       if (options?.category) {
         query = query.eq("category_hint", options.category);
       }
       const maxLimit = options?.limit || 20;
-      query = query.limit(Math.max(maxLimit * 10, 100));
+      query = query.limit(Math.max(maxLimit * 5, 50));
       const { data, error } = await query;
       if (error) {
         console.error("[SupabaseExtractionRepository] getPendingDiscoveryItems error:", error.message);
         return [];
       }
       const pending = [];
+      const now = /* @__PURE__ */ new Date();
       for (const row of data || []) {
-        if (!extractedIds.has(row.id)) {
-          pending.push({
-            id: row.id,
-            sourceId: row.source_id,
-            sourceSlug: row.news_sources?.slug || "unknown-source",
-            sourceName: row.news_sources?.name || "News Source",
-            sourceType: "rss",
-            externalId: row.external_id,
-            sourceUrl: row.canonical_url,
-            canonicalUrl: row.canonical_url,
-            title: row.title,
-            description: row.description,
-            publishedAt: row.published_at,
-            sourceUpdatedAt: row.source_updated_at,
-            discoveredAt: row.discovered_at,
-            lastSeenAt: row.last_seen_at,
-            author: row.author,
-            imageUrl: row.image_url,
-            categoryHint: row.category_hint,
-            subcategoryHint: row.subcategory_hint,
-            rawPayload: row.raw_payload,
-            fingerprint: row.fingerprint,
-            status: row.status,
-            contentHash: row.content_hash
-          });
-          if (pending.length >= maxLimit) {
-            break;
-          }
+        if (excludedIds.has(row.id)) {
+          continue;
+        }
+        const candidateItem = {
+          id: row.id,
+          sourceId: row.source_id,
+          sourceSlug: row.news_sources?.slug || "unknown-source",
+          sourceName: row.news_sources?.name || "News Source",
+          sourceType: "rss",
+          externalId: row.external_id,
+          sourceUrl: row.canonical_url,
+          canonicalUrl: row.canonical_url,
+          title: row.title,
+          description: row.description,
+          publishedAt: row.published_at,
+          sourceUpdatedAt: row.source_updated_at,
+          discoveredAt: row.discovered_at,
+          lastSeenAt: row.last_seen_at,
+          author: row.author,
+          imageUrl: row.image_url,
+          categoryHint: row.category_hint,
+          subcategoryHint: row.subcategory_hint,
+          rawPayload: row.raw_payload,
+          fingerprint: row.fingerprint,
+          status: row.status,
+          contentHash: row.content_hash
+        };
+        if (!isWithinRecencyWindow(candidateItem, now)) {
+          continue;
+        }
+        if (options?.sourceSlug && candidateItem.sourceSlug !== options.sourceSlug) {
+          continue;
+        }
+        pending.push(candidateItem);
+        if (pending.length >= maxLimit) {
+          break;
         }
       }
       return pending;
@@ -3084,14 +3261,49 @@ var MockExtractionRepository = class {
     }
     return list;
   }
+  async updateDiscoveryItemStatus(id, status) {
+    const item = this.discoveryItems.find((i) => i.id === id);
+    if (item) {
+      item.status = status;
+    }
+  }
   async getPendingDiscoveryItems(options) {
-    const extractedIds = new Set(
-      Array.from(this.records.values()).filter((r) => options?.includeFailed ? r.status === "completed" : r.status !== "failed").map((r) => r.discovery_item_id)
-    );
-    let items = this.discoveryItems.filter((item) => !extractedIds.has(item.id));
+    const maxRetries = options?.maxRetries ?? getMaxExtractionRetries();
+    const extractionMap = /* @__PURE__ */ new Map();
+    for (const record of this.records.values()) {
+      extractionMap.set(record.discovery_item_id, record);
+    }
+    let items = this.discoveryItems.filter((item) => {
+      if (item.status !== "new" && item.status !== "candidate") {
+        return false;
+      }
+      if (!isWithinRecencyWindow(item)) {
+        return false;
+      }
+      const existing = extractionMap.get(item.id);
+      if (existing) {
+        if (existing.status === "completed" || existing.status === "needs_review") {
+          return false;
+        }
+        if (existing.status === "failed") {
+          const info = parseExtractionRetryInfo(existing.conflict_details, existing.error_code);
+          if (!shouldRetryExtraction(info.attempts, existing.error_code, maxRetries)) {
+            return false;
+          }
+          if (options?.includeFailed === false) {
+            return false;
+          }
+        }
+      }
+      return true;
+    });
     if (options?.category) {
       items = items.filter((i) => i.categoryHint === options.category);
     }
+    if (options?.sourceSlug) {
+      items = items.filter((i) => i.sourceSlug === options.sourceSlug);
+    }
+    items.sort((a, b) => new Date(b.discoveredAt).getTime() - new Date(a.discoveredAt).getTime());
     if (options?.limit) {
       items = items.slice(0, options.limit);
     }
@@ -6366,15 +6578,15 @@ var NotificationConfigService = class {
    * Returns a safe summary of configuration without printing secrets.
    */
   getSafeSummary() {
-    const config = this.getConfig();
+    const config2 = this.getConfig();
     return {
-      enabled: config.enabled,
-      provider: config.provider,
-      configuredUrl: WebhookSecretSanitizer.sanitizeUrl(config.webhookUrl),
-      hasWebhookUrl: Boolean(config.webhookUrl),
-      timeoutMs: config.timeoutMs,
-      maxRetries: config.maxRetries,
-      baseUrl: config.baseUrl
+      enabled: config2.enabled,
+      provider: config2.provider,
+      configuredUrl: WebhookSecretSanitizer.sanitizeUrl(config2.webhookUrl),
+      hasWebhookUrl: Boolean(config2.webhookUrl),
+      timeoutMs: config2.timeoutMs,
+      maxRetries: config2.maxRetries,
+      baseUrl: config2.baseUrl
     };
   }
 };
@@ -6832,28 +7044,28 @@ var OperatorNotificationService = class {
    * Generates standard review URL for the site operator.
    */
   generateReviewUrl(storyId, validationId) {
-    const config = this.configService.getConfig();
+    const config2 = this.configService.getConfig();
     const targetId = validationId || storyId;
-    return `${config.baseUrl}/review/${targetId}`;
+    return `${config2.baseUrl}/review/${targetId}`;
   }
   /**
    * Instantiates the configured notification provider.
    */
-  resolveProvider(config) {
+  resolveProvider(config2) {
     if (this.customProvider) {
       return this.customProvider;
     }
-    if (!config.webhookUrl) {
+    if (!config2.webhookUrl) {
       return null;
     }
-    switch (config.provider) {
+    switch (config2.provider) {
       case "slack":
-        return new SlackWebhookProvider(config.webhookUrl, config.timeoutMs, config.maxRetries);
+        return new SlackWebhookProvider(config2.webhookUrl, config2.timeoutMs, config2.maxRetries);
       case "discord":
-        return new DiscordWebhookProvider(config.webhookUrl, config.timeoutMs, config.maxRetries);
+        return new DiscordWebhookProvider(config2.webhookUrl, config2.timeoutMs, config2.maxRetries);
       case "webhook":
       default:
-        return new GenericWebhookProvider(config.webhookUrl, config.timeoutMs, config.maxRetries);
+        return new GenericWebhookProvider(config2.webhookUrl, config2.timeoutMs, config2.maxRetries);
     }
   }
   /**
@@ -6874,23 +7086,23 @@ var OperatorNotificationService = class {
         storyId: input.storyId
       };
     }
-    const config = this.configService.getConfig();
-    if (!config.enabled) {
+    const config2 = this.configService.getConfig();
+    if (!config2.enabled) {
       return {
         notified: false,
         success: true,
-        provider: config.provider,
+        provider: config2.provider,
         durationMs: Date.now() - started,
         retries: 0,
         skipReason: "DISABLED",
         storyId: input.storyId
       };
     }
-    if (!config.webhookUrl && !this.customProvider) {
+    if (!config2.webhookUrl && !this.customProvider) {
       return {
         notified: false,
         success: true,
-        provider: config.provider,
+        provider: config2.provider,
         durationMs: Date.now() - started,
         retries: 0,
         skipReason: "MISSING_URL",
@@ -6909,7 +7121,7 @@ var OperatorNotificationService = class {
         return {
           notified: false,
           success: true,
-          provider: config.provider,
+          provider: config2.provider,
           durationMs: Date.now() - started,
           retries: 0,
           skipReason: "DUPLICATE_REVIEW_STATE",
@@ -6918,12 +7130,12 @@ var OperatorNotificationService = class {
         };
       }
     }
-    const provider = this.resolveProvider(config);
+    const provider = this.resolveProvider(config2);
     if (!provider) {
       return {
         notified: false,
         success: false,
-        provider: config.provider,
+        provider: config2.provider,
         durationMs: Date.now() - started,
         retries: 0,
         skipReason: "INVALID_CONFIG",
@@ -6987,7 +7199,7 @@ var OperatorNotificationService = class {
     } catch (unhandledErr) {
       const safeError = WebhookSecretSanitizer.sanitizeMessage(
         unhandledErr?.message || String(unhandledErr),
-        config.webhookUrl
+        config2.webhookUrl
       );
       console.warn("[OperatorNotificationService] Fail-safe caught notification error:", safeError);
       return {
@@ -8073,7 +8285,7 @@ var StageRunnerService = class {
   // 2. EXTRACTION STAGE
   async runExtraction(options = {}) {
     const started = Date.now();
-    const limit = options.limit || 5;
+    const limit = options.limit || 2;
     try {
       const repo = this.supabaseClient && !this.isMock ? new SupabaseExtractionRepository(this.supabaseClient) : new MockExtractionRepository();
       const pendingItems = await repo.getPendingDiscoveryItems({
@@ -8696,14 +8908,36 @@ var SupabaseAutomationRepository = class {
   async getQueueDepths() {
     try {
       const { count: discCount } = await this.client.from("news_sources").select("*", { count: "exact", head: true }).eq("is_active", true);
-      const { count: extCount } = await this.client.from("news_discovery_items").select("*", { count: "exact", head: true }).eq("status", "new");
-      const { count: valCount } = await this.client.from("news_extractions").select("*", { count: "exact", head: true }).eq("status", "completed");
+      const { data: extractionRows } = await this.client.from("news_extractions").select("discovery_item_id, status, error_code, conflict_details");
+      const maxRetries = getMaxExtractionRetries();
+      const excludedDiscoveryIds = /* @__PURE__ */ new Set();
+      for (const row of extractionRows || []) {
+        if (row.status === "completed" || row.status === "needs_review") {
+          excludedDiscoveryIds.add(row.discovery_item_id);
+        } else if (row.status === "failed") {
+          const info = parseExtractionRetryInfo(row.conflict_details, row.error_code);
+          if (!shouldRetryExtraction(info.attempts, row.error_code, maxRetries)) {
+            excludedDiscoveryIds.add(row.discovery_item_id);
+          }
+        }
+      }
+      const recencyCutoff = getRecencyCutoffIso();
+      const { data: activeDiscoveryItems } = await this.client.from("news_discovery_items").select("id, published_at, discovered_at").in("status", ["new", "candidate"]).or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`);
+      const pendingDiscovery = (activeDiscoveryItems || []).filter(
+        (d) => !excludedDiscoveryIds.has(d.id)
+      );
+      const { data: completedExtractions } = await this.client.from("news_extractions").select("id, created_at").eq("status", "completed");
+      const { data: existingValidations } = await this.client.from("news_validations").select("extraction_id");
+      const validatedIds = new Set((existingValidations || []).map((v) => v.extraction_id));
+      const unvalidated = (completedExtractions || []).filter(
+        (e) => !validatedIds.has(e.id)
+      );
       const { count: lifeCount } = await this.client.from("news_validations").select("*", { count: "exact", head: true }).eq("status", "valid");
       const { count: pubCount } = await this.client.from("publication_queue").select("*", { count: "exact", head: true }).eq("status", "queued");
       return {
         discovery: discCount || 0,
-        extraction: extCount || 0,
-        validation: valCount || 0,
+        extraction: pendingDiscovery.length,
+        validation: unvalidated.length,
         lifecycle: lifeCount || 0,
         publishing: pubCount || 0
       };
@@ -8725,14 +8959,52 @@ var SupabaseAutomationRepository = class {
       return Math.max(0, Math.floor(ms / (1e3 * 60)));
     };
     try {
-      const { data: extItem } = await this.client.from("news_discovery_items").select("discovered_at").eq("status", "new").order("discovered_at", { ascending: true }).limit(1).maybeSingle();
-      const { data: valItem } = await this.client.from("news_extractions").select("created_at").eq("status", "completed").order("created_at", { ascending: true }).limit(1).maybeSingle();
+      const { data: extractionRows } = await this.client.from("news_extractions").select("discovery_item_id, status, error_code, conflict_details");
+      const maxRetries = getMaxExtractionRetries();
+      const excludedDiscoveryIds = /* @__PURE__ */ new Set();
+      for (const row of extractionRows || []) {
+        if (row.status === "completed" || row.status === "needs_review") {
+          excludedDiscoveryIds.add(row.discovery_item_id);
+        } else if (row.status === "failed") {
+          const info = parseExtractionRetryInfo(row.conflict_details, row.error_code);
+          if (!shouldRetryExtraction(info.attempts, row.error_code, maxRetries)) {
+            excludedDiscoveryIds.add(row.discovery_item_id);
+          }
+        }
+      }
+      const recencyCutoff = getRecencyCutoffIso();
+      const { data: activeDiscoveryItems } = await this.client.from("news_discovery_items").select("id, published_at, discovered_at").in("status", ["new", "candidate"]).or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`);
+      const pendingDiscovery = (activeDiscoveryItems || []).filter(
+        (d) => !excludedDiscoveryIds.has(d.id)
+      );
+      let extAgeMinutes = null;
+      if (pendingDiscovery.length > 0) {
+        const sorted = pendingDiscovery.sort((a, b) => {
+          const timeA = new Date(a.published_at || a.discovered_at).getTime();
+          const timeB = new Date(b.published_at || b.discovered_at).getTime();
+          return timeA - timeB;
+        });
+        extAgeMinutes = calcAgeMinutes(sorted[0].published_at || sorted[0].discovered_at);
+      }
+      const { data: completedExtractions } = await this.client.from("news_extractions").select("id, created_at").eq("status", "completed");
+      const { data: existingValidations } = await this.client.from("news_validations").select("extraction_id");
+      const validatedIds = new Set((existingValidations || []).map((v) => v.extraction_id));
+      const unvalidated = (completedExtractions || []).filter(
+        (e) => !validatedIds.has(e.id)
+      );
+      let valAgeMinutes = null;
+      if (unvalidated.length > 0) {
+        const sorted = unvalidated.sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        valAgeMinutes = calcAgeMinutes(sorted[0].created_at);
+      }
       const { data: lifeItem } = await this.client.from("news_validations").select("created_at").eq("status", "valid").order("created_at", { ascending: true }).limit(1).maybeSingle();
       const { data: pubItem } = await this.client.from("publication_queue").select("created_at").eq("status", "queued").order("created_at", { ascending: true }).limit(1).maybeSingle();
       return {
         discovery: null,
-        extraction: calcAgeMinutes(extItem?.discovered_at),
-        validation: calcAgeMinutes(valItem?.created_at),
+        extraction: extAgeMinutes,
+        validation: valAgeMinutes,
         lifecycle: calcAgeMinutes(lifeItem?.created_at),
         publishing: calcAgeMinutes(pubItem?.created_at)
       };
@@ -8745,6 +9017,30 @@ var SupabaseAutomationRepository = class {
         lifecycle: null,
         publishing: null
       };
+    }
+  }
+  async recoverStaleRuns(maxAgeSeconds = 600) {
+    try {
+      const cutoff = new Date(Date.now() - maxAgeSeconds * 1e3).toISOString();
+      const { data: stuckRuns, error } = await this.client.from("automation_runs").select("id, started_at, errors").eq("status", "running").lt("started_at", cutoff);
+      if (error || !stuckRuns || stuckRuns.length === 0) return 0;
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      for (const run of stuckRuns) {
+        const existingErrors = Array.isArray(run.errors) ? run.errors : [];
+        await this.client.from("automation_runs").update({
+          status: "failed",
+          finished_at: nowIso,
+          errors: [
+            ...existingErrors,
+            "ABORTED_RUN_AUTO_RECOVERED: Process was terminated by serverless execution limits."
+          ],
+          metadata: { autoRecovered: true, recoveredAt: nowIso }
+        }).eq("id", run.id);
+      }
+      return stuckRuns.length;
+    } catch (err) {
+      console.error("[SupabaseAutomationRepo] recoverStaleRuns error:", err);
+      return 0;
     }
   }
 };
@@ -12500,7 +12796,8 @@ var HealthCheckService = class {
     if (!this.client) return defaultQueues;
     try {
       const now = Date.now();
-      const { data: extItems, count: extCount } = await this.client.from("news_discovery_items").select("created_at", { count: "exact" }).eq("status", "pending").order("created_at", { ascending: true }).limit(1);
+      const recencyCutoff = new Date(now - 72 * 3600 * 1e3).toISOString();
+      const { data: extItems, count: extCount } = await this.client.from("news_discovery_items").select("created_at", { count: "exact" }).in("status", ["new", "candidate"]).or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`).order("created_at", { ascending: true }).limit(1);
       defaultQueues.extraction = extCount || 0;
       if (extItems && extItems.length > 0 && extItems[0].created_at) {
         defaultQueues.oldestPendingItemAge.extractionSec = Math.max(
@@ -12508,7 +12805,7 @@ var HealthCheckService = class {
           Math.floor((now - new Date(extItems[0].created_at).getTime()) / 1e3)
         );
       }
-      const { data: pubItems, count: pubCount } = await this.client.from("publication_queue").select("created_at", { count: "exact" }).eq("status", "pending").order("created_at", { ascending: true }).limit(1);
+      const { data: pubItems, count: pubCount } = await this.client.from("publication_queue").select("created_at", { count: "exact" }).eq("status", "queued").order("created_at", { ascending: true }).limit(1);
       defaultQueues.publication = pubCount || 0;
       if (pubItems && pubItems.length > 0 && pubItems[0].created_at) {
         defaultQueues.oldestPendingItemAge.publicationSec = Math.max(
@@ -12516,8 +12813,12 @@ var HealthCheckService = class {
           Math.floor((now - new Date(pubItems[0].created_at).getTime()) / 1e3)
         );
       }
-      const { count: valCount } = await this.client.from("news_extractions").select("*", { count: "exact", head: true }).eq("status", "completed");
-      defaultQueues.validation = Math.max(0, (valCount || 0) - 2);
+      const { data: completedExtractions } = await this.client.from("news_extractions").select("id").eq("status", "completed");
+      const { data: existingValidations } = await this.client.from("news_validations").select("extraction_id");
+      const validatedIds = new Set((existingValidations || []).map((v) => v.extraction_id));
+      defaultQueues.validation = (completedExtractions || []).filter(
+        (e) => !validatedIds.has(e.id)
+      ).length;
       const { data: mediaItems, count: mediaCount } = await this.client.from("media_processing_queue").select("created_at", { count: "exact" }).eq("status", "pending").order("created_at", { ascending: true }).limit(1);
       defaultQueues.media = mediaCount || 0;
       if (mediaItems && mediaItems.length > 0 && mediaItems[0].created_at) {
@@ -13246,6 +13547,9 @@ var MonitoringService = class {
 };
 
 // src/api/orchestrator.ts
+var config = {
+  maxDuration: 120
+};
 async function handler(req, res) {
   try {
     const authHeader = req.headers["authorization"];
@@ -13327,6 +13631,7 @@ async function handler(req, res) {
   }
 }
 export {
+  config,
   handler as default
 };
 /**
@@ -13360,6 +13665,23 @@ export {
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * ExtractionRetryPolicy: Bounded Retries & Dead-Letter Handling for Extraction Failures
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * DiscoveryRecencyPolicy: Deterministic Recency Window for Active Ingestion
+ *
+ * Prevents historical RSS archives (e.g. OpenAI archive dating back to 2015)
+ * from flooding the active extraction queue.
  */
 /**
  * @license

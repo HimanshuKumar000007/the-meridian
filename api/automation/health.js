@@ -31,7 +31,7 @@ var AutomationConfigService = class {
       },
       maxBatch: {
         discovery: this.parseInt(process.env.DISCOVERY_MAX_BATCH, globalMaxBatch),
-        extraction: this.parseInt(process.env.EXTRACTION_MAX_BATCH, 5),
+        extraction: this.parseInt(process.env.EXTRACTION_MAX_BATCH, 2),
         validation: this.parseInt(process.env.VALIDATION_MAX_BATCH, 10),
         lifecycle: this.parseInt(process.env.LIFECYCLE_MAX_BATCH, 10),
         publishing: this.parseInt(process.env.PUBLISHING_MAX_BATCH, 5)
@@ -74,7 +74,7 @@ var AutomationHealthService = class {
     this.configService = configService || new AutomationConfigService();
   }
   async getHealth() {
-    const config = this.configService.getConfig();
+    const config2 = this.configService.getConfig();
     const schedules = await this.repository.getSchedules();
     const scheduleMap = new Map(schedules.map((s) => [s.stage, s]));
     const queueDepths = await this.repository.getQueueDepths();
@@ -92,16 +92,16 @@ var AutomationHealthService = class {
     ];
     const alerts = [];
     const stageReports = [];
-    if (!config.enabled) {
+    if (!config2.enabled) {
       alerts.push("GLOBAL_KILL_SWITCH_ACTIVE: Automation is currently disabled.");
     }
     if (isLockStale) {
       alerts.push(`STALE_LOCK_DETECTED: Lock held by ${lock?.ownerId} has expired and will be auto-recovered.`);
     }
-    let overallState = config.enabled ? "healthy" : "disabled";
+    let overallState = config2.enabled ? "healthy" : "disabled";
     for (const stage of stages) {
       const schedule = scheduleMap.get(stage);
-      const isEnabled = config.stageEnabled[stage];
+      const isEnabled = config2.stageEnabled[stage];
       const failures = schedule?.consecutiveFailures || 0;
       const depth = queueDepths[stage] || 0;
       const ageMinutes = oldestPendingAges[stage] || null;
@@ -143,14 +143,14 @@ var AutomationHealthService = class {
       overallState = "failed";
     } else if (stageReports.some((s) => s.healthState === "degraded" || s.healthState === "stale")) {
       overallState = "degraded";
-    } else if (!config.enabled) {
+    } else if (!config2.enabled) {
       overallState = "disabled";
     } else {
       overallState = "healthy";
     }
     return {
       overallState,
-      globalEnabled: config.enabled,
+      globalEnabled: config2.enabled,
       activeLock: isLockActive,
       lockOwner: lock?.ownerId || null,
       lockExpiresAt: lock?.expiresAt || null,
@@ -162,6 +162,92 @@ var AutomationHealthService = class {
     };
   }
 };
+
+// src/config/discoveryRecencyPolicy.ts
+var DEFAULT_RECENCY_CONFIG = {
+  // General news feeds default window: 72 hours (3 days)
+  defaultMaxAgeHours: 72,
+  // Specific feed overrides
+  sourceMaxAgeHours: {
+    // OpenAI news feed contains historical posts dating to 2015; active window capped to 48 hours
+    "src-openai-news": 48,
+    "openai-news": 48,
+    // High-cadence breaking news feeds
+    "src-bbc-world": 48,
+    "bbc-world": 48,
+    "src-eurogamer": 48,
+    "eurogamer": 48,
+    // Slower-cadence journal / science feeds
+    "src-nature-news": 96,
+    "nature-news": 96,
+    "src-nasa-breaking": 72,
+    "nasa-breaking": 72
+  }
+};
+function getMaxAgeHoursForSource(sourceSlugOrId, config2 = DEFAULT_RECENCY_CONFIG) {
+  if (!sourceSlugOrId) {
+    return Number(process.env.DISCOVERY_RECENCY_MAX_HOURS) || config2.defaultMaxAgeHours;
+  }
+  const normalized = sourceSlugOrId.toLowerCase().trim();
+  if (config2.sourceMaxAgeHours[normalized] !== void 0) {
+    return config2.sourceMaxAgeHours[normalized];
+  }
+  return Number(process.env.DISCOVERY_RECENCY_MAX_HOURS) || config2.defaultMaxAgeHours;
+}
+function getRecencyCutoffIso(sourceSlugOrId, now = /* @__PURE__ */ new Date(), config2 = DEFAULT_RECENCY_CONFIG) {
+  const maxHours = getMaxAgeHoursForSource(sourceSlugOrId, config2);
+  const cutoffMs = now.getTime() - maxHours * 60 * 60 * 1e3;
+  return new Date(cutoffMs).toISOString();
+}
+
+// src/config/extractionRetryPolicy.ts
+var DEFAULT_MAX_EXTRACTION_RETRIES = 2;
+var DEAD_LETTER_ERROR_CODE = "DEAD_LETTER_MAX_RETRIES";
+function getMaxExtractionRetries() {
+  const envVal = process.env.EXTRACTION_MAX_RETRIES;
+  if (envVal) {
+    const parsed = parseInt(envVal, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return DEFAULT_MAX_EXTRACTION_RETRIES;
+}
+function parseExtractionRetryInfo(conflictDetails, errorCode) {
+  const defaultInfo = {
+    attempts: 1,
+    deadLettered: errorCode === DEAD_LETTER_ERROR_CODE,
+    lastAttemptAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (!conflictDetails) {
+    return defaultInfo;
+  }
+  try {
+    const parsed = JSON.parse(conflictDetails);
+    if (typeof parsed === "object" && parsed !== null) {
+      return {
+        attempts: Number(parsed.attempts) || 1,
+        deadLettered: Boolean(parsed.deadLettered) || errorCode === DEAD_LETTER_ERROR_CODE,
+        lastAttemptAt: parsed.lastAttemptAt || (/* @__PURE__ */ new Date()).toISOString(),
+        lastError: parsed.lastError || null
+      };
+    }
+  } catch {
+    const match = conflictDetails.match(/attempts?:?\s*(\d+)/i);
+    if (match) {
+      return {
+        attempts: parseInt(match[1], 10),
+        deadLettered: errorCode === DEAD_LETTER_ERROR_CODE,
+        lastAttemptAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+    }
+  }
+  return defaultInfo;
+}
+function shouldRetryExtraction(attempts, errorCode, maxRetries = getMaxExtractionRetries()) {
+  if (errorCode === DEAD_LETTER_ERROR_CODE) {
+    return false;
+  }
+  return attempts < maxRetries;
+}
 
 // src/data/repositories/SupabaseAutomationRepository.ts
 var SupabaseAutomationRepository = class {
@@ -414,14 +500,36 @@ var SupabaseAutomationRepository = class {
   async getQueueDepths() {
     try {
       const { count: discCount } = await this.client.from("news_sources").select("*", { count: "exact", head: true }).eq("is_active", true);
-      const { count: extCount } = await this.client.from("news_discovery_items").select("*", { count: "exact", head: true }).eq("status", "new");
-      const { count: valCount } = await this.client.from("news_extractions").select("*", { count: "exact", head: true }).eq("status", "completed");
+      const { data: extractionRows } = await this.client.from("news_extractions").select("discovery_item_id, status, error_code, conflict_details");
+      const maxRetries = getMaxExtractionRetries();
+      const excludedDiscoveryIds = /* @__PURE__ */ new Set();
+      for (const row of extractionRows || []) {
+        if (row.status === "completed" || row.status === "needs_review") {
+          excludedDiscoveryIds.add(row.discovery_item_id);
+        } else if (row.status === "failed") {
+          const info = parseExtractionRetryInfo(row.conflict_details, row.error_code);
+          if (!shouldRetryExtraction(info.attempts, row.error_code, maxRetries)) {
+            excludedDiscoveryIds.add(row.discovery_item_id);
+          }
+        }
+      }
+      const recencyCutoff = getRecencyCutoffIso();
+      const { data: activeDiscoveryItems } = await this.client.from("news_discovery_items").select("id, published_at, discovered_at").in("status", ["new", "candidate"]).or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`);
+      const pendingDiscovery = (activeDiscoveryItems || []).filter(
+        (d) => !excludedDiscoveryIds.has(d.id)
+      );
+      const { data: completedExtractions } = await this.client.from("news_extractions").select("id, created_at").eq("status", "completed");
+      const { data: existingValidations } = await this.client.from("news_validations").select("extraction_id");
+      const validatedIds = new Set((existingValidations || []).map((v) => v.extraction_id));
+      const unvalidated = (completedExtractions || []).filter(
+        (e) => !validatedIds.has(e.id)
+      );
       const { count: lifeCount } = await this.client.from("news_validations").select("*", { count: "exact", head: true }).eq("status", "valid");
       const { count: pubCount } = await this.client.from("publication_queue").select("*", { count: "exact", head: true }).eq("status", "queued");
       return {
         discovery: discCount || 0,
-        extraction: extCount || 0,
-        validation: valCount || 0,
+        extraction: pendingDiscovery.length,
+        validation: unvalidated.length,
         lifecycle: lifeCount || 0,
         publishing: pubCount || 0
       };
@@ -443,14 +551,52 @@ var SupabaseAutomationRepository = class {
       return Math.max(0, Math.floor(ms / (1e3 * 60)));
     };
     try {
-      const { data: extItem } = await this.client.from("news_discovery_items").select("discovered_at").eq("status", "new").order("discovered_at", { ascending: true }).limit(1).maybeSingle();
-      const { data: valItem } = await this.client.from("news_extractions").select("created_at").eq("status", "completed").order("created_at", { ascending: true }).limit(1).maybeSingle();
+      const { data: extractionRows } = await this.client.from("news_extractions").select("discovery_item_id, status, error_code, conflict_details");
+      const maxRetries = getMaxExtractionRetries();
+      const excludedDiscoveryIds = /* @__PURE__ */ new Set();
+      for (const row of extractionRows || []) {
+        if (row.status === "completed" || row.status === "needs_review") {
+          excludedDiscoveryIds.add(row.discovery_item_id);
+        } else if (row.status === "failed") {
+          const info = parseExtractionRetryInfo(row.conflict_details, row.error_code);
+          if (!shouldRetryExtraction(info.attempts, row.error_code, maxRetries)) {
+            excludedDiscoveryIds.add(row.discovery_item_id);
+          }
+        }
+      }
+      const recencyCutoff = getRecencyCutoffIso();
+      const { data: activeDiscoveryItems } = await this.client.from("news_discovery_items").select("id, published_at, discovered_at").in("status", ["new", "candidate"]).or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`);
+      const pendingDiscovery = (activeDiscoveryItems || []).filter(
+        (d) => !excludedDiscoveryIds.has(d.id)
+      );
+      let extAgeMinutes = null;
+      if (pendingDiscovery.length > 0) {
+        const sorted = pendingDiscovery.sort((a, b) => {
+          const timeA = new Date(a.published_at || a.discovered_at).getTime();
+          const timeB = new Date(b.published_at || b.discovered_at).getTime();
+          return timeA - timeB;
+        });
+        extAgeMinutes = calcAgeMinutes(sorted[0].published_at || sorted[0].discovered_at);
+      }
+      const { data: completedExtractions } = await this.client.from("news_extractions").select("id, created_at").eq("status", "completed");
+      const { data: existingValidations } = await this.client.from("news_validations").select("extraction_id");
+      const validatedIds = new Set((existingValidations || []).map((v) => v.extraction_id));
+      const unvalidated = (completedExtractions || []).filter(
+        (e) => !validatedIds.has(e.id)
+      );
+      let valAgeMinutes = null;
+      if (unvalidated.length > 0) {
+        const sorted = unvalidated.sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        valAgeMinutes = calcAgeMinutes(sorted[0].created_at);
+      }
       const { data: lifeItem } = await this.client.from("news_validations").select("created_at").eq("status", "valid").order("created_at", { ascending: true }).limit(1).maybeSingle();
       const { data: pubItem } = await this.client.from("publication_queue").select("created_at").eq("status", "queued").order("created_at", { ascending: true }).limit(1).maybeSingle();
       return {
         discovery: null,
-        extraction: calcAgeMinutes(extItem?.discovered_at),
-        validation: calcAgeMinutes(valItem?.created_at),
+        extraction: extAgeMinutes,
+        validation: valAgeMinutes,
         lifecycle: calcAgeMinutes(lifeItem?.created_at),
         publishing: calcAgeMinutes(pubItem?.created_at)
       };
@@ -463,6 +609,30 @@ var SupabaseAutomationRepository = class {
         lifecycle: null,
         publishing: null
       };
+    }
+  }
+  async recoverStaleRuns(maxAgeSeconds = 600) {
+    try {
+      const cutoff = new Date(Date.now() - maxAgeSeconds * 1e3).toISOString();
+      const { data: stuckRuns, error } = await this.client.from("automation_runs").select("id, started_at, errors").eq("status", "running").lt("started_at", cutoff);
+      if (error || !stuckRuns || stuckRuns.length === 0) return 0;
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      for (const run of stuckRuns) {
+        const existingErrors = Array.isArray(run.errors) ? run.errors : [];
+        await this.client.from("automation_runs").update({
+          status: "failed",
+          finished_at: nowIso,
+          errors: [
+            ...existingErrors,
+            "ABORTED_RUN_AUTO_RECOVERED: Process was terminated by serverless execution limits."
+          ],
+          metadata: { autoRecovered: true, recoveredAt: nowIso }
+        }).eq("id", run.id);
+      }
+      return stuckRuns.length;
+    } catch (err) {
+      console.error("[SupabaseAutomationRepo] recoverStaleRuns error:", err);
+      return 0;
     }
   }
 };
@@ -511,6 +681,9 @@ var SchedulerCapabilityService = class {
 };
 
 // src/api/health.ts
+var config = {
+  maxDuration: 30
+};
 async function handler(req, res) {
   const configService = new AutomationConfigService();
   const authHeader = req.headers["authorization"];
@@ -542,6 +715,7 @@ async function handler(req, res) {
   }
 }
 export {
+  config,
   handler as default
 };
 /**
@@ -557,6 +731,23 @@ export {
  *
  * The Meridian — Global News Platform
  * AutomationHealthService: Health State, Queue Metrics, Backlog Age, and Incident Detection
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * DiscoveryRecencyPolicy: Deterministic Recency Window for Active Ingestion
+ *
+ * Prevents historical RSS archives (e.g. OpenAI archive dating back to 2015)
+ * from flooding the active extraction queue.
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The Meridian — Global News Platform
+ * ExtractionRetryPolicy: Bounded Retries & Dead-Letter Handling for Extraction Failures
  */
 /**
  * @license

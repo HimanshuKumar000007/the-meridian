@@ -20,6 +20,11 @@ import {
 } from './extractionPrompt';
 import type { ExtractionLLMProvider } from './NvidiaClient';
 import type { ExtractionRepository } from '../../data/repositories/ExtractionRepository';
+import {
+  parseExtractionRetryInfo,
+  getMaxExtractionRetries,
+  DEAD_LETTER_ERROR_CODE,
+} from '../../config/extractionRetryPolicy';
 
 export interface ExtractionEngineOptions {
   llmProvider: ExtractionLLMProvider;
@@ -170,6 +175,22 @@ export class ExtractionEngine {
 
     // 5. Build Final Candidate / Failed Record
     if (!validatedPayload) {
+      let previousAttempts = 0;
+      if (this.repository) {
+        try {
+          const existing = await this.repository.findExtraction(item.id, inputHash, promptVersion);
+          if (existing) {
+            const info = parseExtractionRetryInfo(existing.conflict_details, existing.error_code);
+            previousAttempts = info.attempts;
+          }
+        } catch {}
+      }
+
+      const attemptCount = previousAttempts + 1;
+      const maxRetries = options.maxRetries ?? getMaxExtractionRetries();
+      const isDeadLetter = attemptCount >= maxRetries;
+      const finalErrorCode = isDeadLetter ? DEAD_LETTER_ERROR_CODE : errorCode;
+
       const failedRecord: NewsExtractionRecord = {
         id: candidateId,
         discovery_item_id: item.id,
@@ -177,14 +198,23 @@ export class ExtractionEngine {
         model: usedModel,
         prompt_version: promptVersion,
         input_hash: inputHash,
-        error_code: errorCode,
+        error_code: finalErrorCode,
         error_message: extractionError,
+        conflict_details: JSON.stringify({
+          attempts: attemptCount,
+          deadLettered: isDeadLetter,
+          lastAttemptAt: now,
+          lastError: extractionError,
+        }),
         created_at: now,
         updated_at: now,
       };
 
       if (!options.dryRun && this.repository) {
         await this.repository.saveExtraction(failedRecord);
+        if (isDeadLetter) {
+          await this.repository.updateDiscoveryItemStatus(item.id, 'failed');
+        }
       }
 
       throw new Error(`[ExtractionEngine] Extraction failed for item ${item.id}: ${extractionError}`);
@@ -246,6 +276,7 @@ export class ExtractionEngine {
     if (!options.dryRun && this.repository) {
       const record = this.mapCandidateToRecord(candidate);
       await this.repository.saveExtraction(record);
+      await this.repository.updateDiscoveryItemStatus(item.id, 'processed');
     }
 
     return candidate;

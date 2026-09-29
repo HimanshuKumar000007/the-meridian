@@ -18,6 +18,10 @@ import { AutomationConfigService } from '../services/automation/AutomationConfig
 import { MonitoringService } from '../services/monitoring/MonitoringService';
 import type { AutomationStage, AutomationTrigger } from '../types/automation';
 
+export const config = {
+  maxDuration: 120,
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const authHeader = req.headers['authorization'] as string | undefined;

@@ -190,4 +190,41 @@ export class MockAutomationRepository implements AutomationRepository {
   async getOldestPendingAges(): Promise<Record<AutomationStage, number | null>> {
     return { ...this.oldestPendingAges };
   }
+
+  public setQueueDepth(stage: AutomationStage, depth: number): void {
+    this.queueDepths[stage] = depth;
+  }
+
+  public setOldestPendingAge(stage: AutomationStage, ageMinutes: number | null): void {
+    this.oldestPendingAges[stage] = ageMinutes;
+  }
+
+  async recoverStaleRuns(maxAgeSeconds = 600): Promise<number> {
+    const cutoff = Date.now() - maxAgeSeconds * 1000;
+    let recovered = 0;
+    const nowIso = new Date().toISOString();
+
+    for (let i = 0; i < this.runs.length; i++) {
+      const run = this.runs[i];
+      if (run.status === 'running' && new Date(run.startedAt).getTime() < cutoff) {
+        this.runs[i] = {
+          ...run,
+          status: 'failed',
+          finishedAt: nowIso,
+          errors: [
+            ...run.errors,
+            'ABORTED_RUN_AUTO_RECOVERED: Process was terminated by serverless execution limits.',
+          ],
+          metadata: {
+            ...run.metadata,
+            autoRecovered: true,
+            recoveredAt: nowIso,
+          },
+        };
+        recovered++;
+      }
+    }
+    return recovered;
+  }
 }
+

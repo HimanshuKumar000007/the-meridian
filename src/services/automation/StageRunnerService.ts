@@ -144,7 +144,7 @@ export class StageRunnerService {
   // 2. EXTRACTION STAGE
   async runExtraction(options: StageRunOptions = {}): Promise<StageRunResult> {
     const started = Date.now();
-    const limit = options.limit || 5;
+    const limit = options.limit || 2;
 
     try {
       const repo =

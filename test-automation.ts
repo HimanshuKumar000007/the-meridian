@@ -44,7 +44,7 @@ async function runTests() {
     assert(config.enabled === true, 'Test 1a: Global automation enabled by default');
     assert(config.targetIntervals.discovery === 60, 'Test 1b: Discovery default target interval is 60m');
     assert(config.targetIntervals.extraction === 10, 'Test 1c: Extraction default target interval is 10m');
-    assert(config.maxBatch.extraction === 5, 'Test 1d: Extraction default batch limit is 5');
+    assert(config.maxBatch.extraction === 2, 'Test 1d: Extraction default batch limit is 2 (bounded serverless budget)');
     assert(config.maxBatch.validation === 10, 'Test 1e: Validation default batch limit is 10');
   }
 
@@ -259,12 +259,12 @@ async function runTests() {
     const configService = new AutomationConfigService();
     const config = configService.getConfig();
 
-    assert(config.maxBatch.extraction === 5, 'Test 12a: Configured extraction batch limit is 5');
+    assert(config.maxBatch.extraction === 2, 'Test 12a: Configured extraction batch limit is 2');
 
     const runner = new StageRunnerService(null, true);
     const extractionResult = await runner.runExtraction({ limit: config.maxBatch.extraction, dryRun: true });
 
-    assert(extractionResult.metadata?.plannedBatchSize === 5, 'Test 12b: Bounded batch processed is 5, NOT 850');
+    assert(extractionResult.metadata?.plannedBatchSize === 2, 'Test 12b: Bounded batch processed is 2, NOT 850');
   }
 
   // --- 13. DISCOVERY STAGE TRIGGER TESTS ---

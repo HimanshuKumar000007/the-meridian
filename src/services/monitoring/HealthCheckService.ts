@@ -1074,11 +1074,13 @@ export class HealthCheckService {
     try {
       const now = Date.now();
 
-      // 1. Extraction Queue (pending items in news_discovery_items)
+      // 1. Extraction Queue (active items in news_discovery_items within recency window)
+      const recencyCutoff = new Date(now - 72 * 3600 * 1000).toISOString();
       const { data: extItems, count: extCount } = await this.client
         .from('news_discovery_items')
         .select('created_at', { count: 'exact' })
-        .eq('status', 'pending')
+        .in('status', ['new', 'candidate'])
+        .or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`)
         .order('created_at', { ascending: true })
         .limit(1);
 
@@ -1094,7 +1096,7 @@ export class HealthCheckService {
       const { data: pubItems, count: pubCount } = await this.client
         .from('publication_queue')
         .select('created_at', { count: 'exact' })
-        .eq('status', 'pending')
+        .eq('status', 'queued')
         .order('created_at', { ascending: true })
         .limit(1);
 
@@ -1106,12 +1108,21 @@ export class HealthCheckService {
         );
       }
 
-      // 3. Validation Queue (extractions pending validation)
-      const { count: valCount } = await this.client
+      // 3. Validation Queue (completed extractions that do NOT yet have a validation record)
+      const { data: completedExtractions } = await this.client
         .from('news_extractions')
-        .select('*', { count: 'exact', head: true })
+        .select('id')
         .eq('status', 'completed');
-      defaultQueues.validation = Math.max(0, (valCount || 0) - 2);
+
+      const { data: existingValidations } = await this.client
+        .from('news_validations')
+        .select('extraction_id');
+
+      const validatedIds = new Set((existingValidations || []).map((v: any) => v.extraction_id));
+      defaultQueues.validation = (completedExtractions || []).filter(
+        (e: any) => !validatedIds.has(e.id)
+      ).length;
+
 
       // 4. Media Processing Queue
       const { data: mediaItems, count: mediaCount } = await this.client

@@ -15,6 +15,13 @@ import type {
   AutomationSchedule,
   AutomationLock,
 } from '../../types/automation';
+import { getRecencyCutoffIso } from '../../config/discoveryRecencyPolicy';
+import {
+  parseExtractionRetryInfo,
+  shouldRetryExtraction,
+  getMaxExtractionRetries,
+} from '../../config/extractionRetryPolicy';
+
 
 export class SupabaseAutomationRepository implements AutomationRepository {
   constructor(private client: SupabaseClient) {}
@@ -364,17 +371,49 @@ export class SupabaseAutomationRepository implements AutomationRepository {
         .select('*', { count: 'exact', head: true })
         .eq('is_active', true);
 
-      // 2. Extraction queue (discovery items with status = 'new')
-      const { count: extCount } = await this.client
-        .from('news_discovery_items')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'new');
-
-      // 3. Validation queue (completed extractions)
-      const { count: valCount } = await this.client
+      // 2. Extraction queue (active discovery items within recency window not yet extracted or dead-lettered)
+      const { data: extractionRows } = await this.client
         .from('news_extractions')
-        .select('*', { count: 'exact', head: true })
+        .select('discovery_item_id, status, error_code, conflict_details');
+
+      const maxRetries = getMaxExtractionRetries();
+      const excludedDiscoveryIds = new Set<string>();
+      for (const row of extractionRows || []) {
+        if (row.status === 'completed' || row.status === 'needs_review') {
+          excludedDiscoveryIds.add(row.discovery_item_id);
+        } else if (row.status === 'failed') {
+          const info = parseExtractionRetryInfo(row.conflict_details, row.error_code);
+          if (!shouldRetryExtraction(info.attempts, row.error_code, maxRetries)) {
+            excludedDiscoveryIds.add(row.discovery_item_id);
+          }
+        }
+      }
+
+      const recencyCutoff = getRecencyCutoffIso();
+      const { data: activeDiscoveryItems } = await this.client
+        .from('news_discovery_items')
+        .select('id, published_at, discovered_at')
+        .in('status', ['new', 'candidate'])
+        .or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`);
+
+      const pendingDiscovery = (activeDiscoveryItems || []).filter(
+        (d: any) => !excludedDiscoveryIds.has(d.id)
+      );
+
+      // 3. Validation queue (completed extractions that do NOT yet have a validation record)
+      const { data: completedExtractions } = await this.client
+        .from('news_extractions')
+        .select('id, created_at')
         .eq('status', 'completed');
+
+      const { data: existingValidations } = await this.client
+        .from('news_validations')
+        .select('extraction_id');
+
+      const validatedIds = new Set((existingValidations || []).map((v: any) => v.extraction_id));
+      const unvalidated = (completedExtractions || []).filter(
+        (e: any) => !validatedIds.has(e.id)
+      );
 
       // 4. Lifecycle queue (valid validations)
       const { count: lifeCount } = await this.client
@@ -390,8 +429,8 @@ export class SupabaseAutomationRepository implements AutomationRepository {
 
       return {
         discovery: discCount || 0,
-        extraction: extCount || 0,
-        validation: valCount || 0,
+        extraction: pendingDiscovery.length,
+        validation: unvalidated.length,
         lifecycle: lifeCount || 0,
         publishing: pubCount || 0,
       };
@@ -415,25 +454,69 @@ export class SupabaseAutomationRepository implements AutomationRepository {
     };
 
     try {
-      // Extraction oldest
-      const { data: extItem } = await this.client
-        .from('news_discovery_items')
-        .select('discovered_at')
-        .eq('status', 'new')
-        .order('discovered_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      // Validation oldest
-      const { data: valItem } = await this.client
+      // 1. Extraction oldest pending item within recency window
+      const { data: extractionRows } = await this.client
         .from('news_extractions')
-        .select('created_at')
-        .eq('status', 'completed')
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .select('discovery_item_id, status, error_code, conflict_details');
 
-      // Lifecycle oldest
+      const maxRetries = getMaxExtractionRetries();
+      const excludedDiscoveryIds = new Set<string>();
+      for (const row of extractionRows || []) {
+        if (row.status === 'completed' || row.status === 'needs_review') {
+          excludedDiscoveryIds.add(row.discovery_item_id);
+        } else if (row.status === 'failed') {
+          const info = parseExtractionRetryInfo(row.conflict_details, row.error_code);
+          if (!shouldRetryExtraction(info.attempts, row.error_code, maxRetries)) {
+            excludedDiscoveryIds.add(row.discovery_item_id);
+          }
+        }
+      }
+
+      const recencyCutoff = getRecencyCutoffIso();
+      const { data: activeDiscoveryItems } = await this.client
+        .from('news_discovery_items')
+        .select('id, published_at, discovered_at')
+        .in('status', ['new', 'candidate'])
+        .or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`);
+
+      const pendingDiscovery = (activeDiscoveryItems || []).filter(
+        (d: any) => !excludedDiscoveryIds.has(d.id)
+      );
+
+      let extAgeMinutes: number | null = null;
+      if (pendingDiscovery.length > 0) {
+        const sorted = pendingDiscovery.sort((a: any, b: any) => {
+          const timeA = new Date(a.published_at || a.discovered_at).getTime();
+          const timeB = new Date(b.published_at || b.discovered_at).getTime();
+          return timeA - timeB;
+        });
+        extAgeMinutes = calcAgeMinutes(sorted[0].published_at || sorted[0].discovered_at);
+      }
+
+      // 2. Validation oldest: completed extractions without a validation record
+      const { data: completedExtractions } = await this.client
+        .from('news_extractions')
+        .select('id, created_at')
+        .eq('status', 'completed');
+
+      const { data: existingValidations } = await this.client
+        .from('news_validations')
+        .select('extraction_id');
+
+      const validatedIds = new Set((existingValidations || []).map((v: any) => v.extraction_id));
+      const unvalidated = (completedExtractions || []).filter(
+        (e: any) => !validatedIds.has(e.id)
+      );
+
+      let valAgeMinutes: number | null = null;
+      if (unvalidated.length > 0) {
+        const sorted = unvalidated.sort(
+          (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        valAgeMinutes = calcAgeMinutes(sorted[0].created_at);
+      }
+
+      // 3. Lifecycle oldest: valid validations
       const { data: lifeItem } = await this.client
         .from('news_validations')
         .select('created_at')
@@ -442,7 +525,7 @@ export class SupabaseAutomationRepository implements AutomationRepository {
         .limit(1)
         .maybeSingle();
 
-      // Publishing oldest
+      // 4. Publishing oldest: queued items
       const { data: pubItem } = await this.client
         .from('publication_queue')
         .select('created_at')
@@ -453,8 +536,8 @@ export class SupabaseAutomationRepository implements AutomationRepository {
 
       return {
         discovery: null,
-        extraction: calcAgeMinutes(extItem?.discovered_at),
-        validation: calcAgeMinutes(valItem?.created_at),
+        extraction: extAgeMinutes,
+        validation: valAgeMinutes,
         lifecycle: calcAgeMinutes(lifeItem?.created_at),
         publishing: calcAgeMinutes(pubItem?.created_at),
       };
@@ -469,4 +552,39 @@ export class SupabaseAutomationRepository implements AutomationRepository {
       };
     }
   }
+
+  async recoverStaleRuns(maxAgeSeconds = 600): Promise<number> {
+    try {
+      const cutoff = new Date(Date.now() - maxAgeSeconds * 1000).toISOString();
+      const { data: stuckRuns, error } = await this.client
+        .from('automation_runs')
+        .select('id, started_at, errors')
+        .eq('status', 'running')
+        .lt('started_at', cutoff);
+
+      if (error || !stuckRuns || stuckRuns.length === 0) return 0;
+
+      const nowIso = new Date().toISOString();
+      for (const run of stuckRuns) {
+        const existingErrors = Array.isArray(run.errors) ? run.errors : [];
+        await this.client
+          .from('automation_runs')
+          .update({
+            status: 'failed',
+            finished_at: nowIso,
+            errors: [
+              ...existingErrors,
+              'ABORTED_RUN_AUTO_RECOVERED: Process was terminated by serverless execution limits.',
+            ],
+            metadata: { autoRecovered: true, recoveredAt: nowIso },
+          })
+          .eq('id', run.id);
+      }
+      return stuckRuns.length;
+    } catch (err) {
+      console.error('[SupabaseAutomationRepo] recoverStaleRuns error:', err);
+      return 0;
+    }
+  }
 }
+

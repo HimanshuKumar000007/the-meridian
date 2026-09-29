@@ -128,6 +128,13 @@ export class PipelineOrchestrator {
         };
       }
       lockAcquired = true;
+
+      // Recover stale/aborted runs from previous serverless terminations
+      try {
+        await this.repository.recoverStaleRuns(config.lockTtlSeconds * 2);
+      } catch (err: any) {
+        console.error('[PipelineOrchestrator] Failed to recover stale runs:', err);
+      }
     }
 
     // 3. RECORD RUN INITIALIZATION
@@ -145,6 +152,7 @@ export class PipelineOrchestrator {
         console.error('[PipelineOrchestrator] Failed to record run creation:', err);
       }
     }
+
 
     try {
       // 4. FETCH STAGE SCHEDULES & QUEUE DEPTHS
@@ -245,13 +253,14 @@ export class PipelineOrchestrator {
             nextDueAt,
           };
 
-          if (result.status === 'completed') {
+          if (result.status === 'completed' || (result.status === 'partial' && result.succeeded > 0)) {
             updates.lastSuccessAt = nowIso;
             updates.consecutiveFailures = 0;
-          } else if (result.status === 'failed') {
+          } else if (result.status === 'failed' || (result.status === 'partial' && result.succeeded === 0)) {
             updates.lastFailureAt = nowIso;
             updates.consecutiveFailures = (schedule.consecutiveFailures || 0) + 1;
           }
+
 
           try {
             await this.repository.updateSchedule(stage, updates);

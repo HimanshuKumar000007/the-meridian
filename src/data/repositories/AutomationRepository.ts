@@ -72,4 +72,10 @@ export interface AutomationRepository {
    * Get age in minutes of the oldest pending item in each queue.
    */
   getOldestPendingAges(): Promise<Record<AutomationStage, number | null>>;
+
+  /**
+   * Recovers runs left in 'running' state after serverless environment timeouts.
+   */
+  recoverStaleRuns(maxAgeSeconds?: number): Promise<number>;
 }
+

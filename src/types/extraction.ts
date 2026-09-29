@@ -180,4 +180,6 @@ export interface ExtractionOptions {
   timeoutMs?: number;
   maxTokens?: number;
   temperature?: number;
+  maxRetries?: number;
 }
+

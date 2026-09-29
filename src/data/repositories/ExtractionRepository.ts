@@ -4,7 +4,7 @@
  */
 
 import type { NewsExtractionRecord, ExtractionStatus } from '../../types/extraction';
-import type { DiscoveryItem } from '../../types/discovery';
+import type { DiscoveryItem, DiscoveryStatus } from '../../types/discovery';
 
 export interface ExtractionFilter {
   status?: ExtractionStatus;
@@ -47,5 +47,15 @@ export interface ExtractionRepository {
     sourceSlug?: string;
     priority?: number;
     includeFailed?: boolean;
+    maxRetries?: number;
   }): Promise<DiscoveryItem[]>;
+
+  /**
+   * Update the status of a discovery item (e.g. 'processed' or 'failed')
+   */
+  updateDiscoveryItemStatus(
+    id: string,
+    status: DiscoveryStatus
+  ): Promise<void>;
 }
+

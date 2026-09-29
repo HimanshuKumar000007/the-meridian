@@ -13,6 +13,10 @@ import { SupabaseAutomationRepository } from '../data/repositories/SupabaseAutom
 import { AutomationConfigService } from '../services/automation/AutomationConfigService';
 import { SchedulerCapabilityService } from '../services/automation/SchedulerCapabilityService';
 
+export const config = {
+  maxDuration: 30,
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const configService = new AutomationConfigService();
   const authHeader = req.headers['authorization'] as string | undefined;

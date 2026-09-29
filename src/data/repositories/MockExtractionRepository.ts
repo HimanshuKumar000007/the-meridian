@@ -5,7 +5,13 @@
 
 import type { ExtractionRepository, ExtractionFilter } from './ExtractionRepository';
 import type { NewsExtractionRecord } from '../../types/extraction';
-import type { DiscoveryItem } from '../../types/discovery';
+import type { DiscoveryItem, DiscoveryStatus } from '../../types/discovery';
+import { isWithinRecencyWindow } from '../../config/discoveryRecencyPolicy';
+import {
+  parseExtractionRetryInfo,
+  shouldRetryExtraction,
+  getMaxExtractionRetries,
+} from '../../config/extractionRetryPolicy';
 
 export class MockExtractionRepository implements ExtractionRepository {
   private records: Map<string, NewsExtractionRecord> = new Map();
@@ -62,24 +68,76 @@ export class MockExtractionRepository implements ExtractionRepository {
     return list;
   }
 
+  public async updateDiscoveryItemStatus(id: string, status: DiscoveryStatus): Promise<void> {
+    const item = this.discoveryItems.find((i) => i.id === id);
+    if (item) {
+      item.status = status;
+    }
+  }
+
   public async getPendingDiscoveryItems(options?: {
     limit?: number;
     category?: string;
     sourceSlug?: string;
     priority?: number;
     includeFailed?: boolean;
+    maxRetries?: number;
   }): Promise<DiscoveryItem[]> {
-    const extractedIds = new Set(
-      Array.from(this.records.values())
-        .filter((r) => (options?.includeFailed ? r.status === 'completed' : r.status !== 'failed'))
-        .map((r) => r.discovery_item_id)
-    );
+    const maxRetries = options?.maxRetries ?? getMaxExtractionRetries();
 
-    let items = this.discoveryItems.filter((item) => !extractedIds.has(item.id));
+    // Map discovery_item_id to its latest extraction record
+    const extractionMap = new Map<string, NewsExtractionRecord>();
+    for (const record of this.records.values()) {
+      extractionMap.set(record.discovery_item_id, record);
+    }
+
+    // Filter items:
+    // 1. Must be in active state ('new' or 'candidate')
+    // 2. Must be within the deterministic recency window
+    // 3. Must not be already extracted ('completed' or 'needs_review')
+    // 4. Must not have exceeded bounded retry limit if previously failed
+    let items = this.discoveryItems.filter((item) => {
+      // 1. Check status
+      if (item.status !== 'new' && item.status !== 'candidate') {
+        return false;
+      }
+
+      // 2. Check deterministic recency window
+      if (!isWithinRecencyWindow(item)) {
+        return false;
+      }
+
+      // 3. Check extraction history
+      const existing = extractionMap.get(item.id);
+      if (existing) {
+        if (existing.status === 'completed' || existing.status === 'needs_review') {
+          return false;
+        }
+
+        if (existing.status === 'failed') {
+          const info = parseExtractionRetryInfo(existing.conflict_details, existing.error_code);
+          if (!shouldRetryExtraction(info.attempts, existing.error_code, maxRetries)) {
+            return false;
+          }
+          if (options?.includeFailed === false) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
 
     if (options?.category) {
       items = items.filter((i) => i.categoryHint === options.category);
     }
+
+    if (options?.sourceSlug) {
+      items = items.filter((i) => i.sourceSlug === options.sourceSlug);
+    }
+
+    // Sort newest discovered first
+    items.sort((a, b) => new Date(b.discoveredAt).getTime() - new Date(a.discoveredAt).getTime());
 
     if (options?.limit) {
       items = items.slice(0, options.limit);
@@ -88,3 +146,4 @@ export class MockExtractionRepository implements ExtractionRepository {
     return items;
   }
 }
+

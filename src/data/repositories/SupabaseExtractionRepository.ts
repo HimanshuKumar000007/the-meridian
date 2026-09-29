@@ -6,7 +6,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ExtractionRepository, ExtractionFilter } from './ExtractionRepository';
 import type { NewsExtractionRecord } from '../../types/extraction';
-import type { DiscoveryItem } from '../../types/discovery';
+import type { DiscoveryItem, DiscoveryStatus } from '../../types/discovery';
+import { isWithinRecencyWindow, getRecencyCutoffIso } from '../../config/discoveryRecencyPolicy';
+import {
+  parseExtractionRetryInfo,
+  shouldRetryExtraction,
+  getMaxExtractionRetries,
+} from '../../config/extractionRetryPolicy';
 
 export class SupabaseExtractionRepository implements ExtractionRepository {
   private client: SupabaseClient;
@@ -141,25 +147,71 @@ export class SupabaseExtractionRepository implements ExtractionRepository {
     }
   }
 
+  public async updateDiscoveryItemStatus(
+    id: string,
+    status: DiscoveryStatus
+  ): Promise<void> {
+    try {
+      const { error } = await this.client
+        .from('news_discovery_items')
+        .update({
+          status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) {
+        console.error(`[SupabaseExtractionRepository] updateDiscoveryItemStatus error for ${id}:`, error.message);
+      }
+    } catch (err: any) {
+      console.error(`[SupabaseExtractionRepository] updateDiscoveryItemStatus exception for ${id}:`, err.message);
+    }
+  }
+
   public async getPendingDiscoveryItems(options?: {
     limit?: number;
     category?: string;
     sourceSlug?: string;
     priority?: number;
     includeFailed?: boolean;
+    maxRetries?: number;
   }): Promise<DiscoveryItem[]> {
     try {
-      // Fetch completed extractions to exclude them
-      const { data: extractedRows } = await this.client
+      const maxRetries = options?.maxRetries ?? getMaxExtractionRetries();
+
+      // 1. Fetch existing extractions to determine completed, in-review, or dead-lettered items
+      const { data: extractionRows, error: extError } = await this.client
         .from('news_extractions')
-        .select('discovery_item_id')
-        .eq('status', 'completed');
+        .select('discovery_item_id, status, error_code, conflict_details');
 
-      const extractedIds = new Set((extractedRows || []).map((r: any) => r.discovery_item_id));
+      if (extError) {
+        console.error('[SupabaseExtractionRepository] getPendingDiscoveryItems extractions query error:', extError.message);
+      }
 
+      const excludedIds = new Set<string>();
+      for (const row of extractionRows || []) {
+        if (row.status === 'completed' || row.status === 'needs_review') {
+          excludedIds.add(row.discovery_item_id);
+        } else if (row.status === 'failed') {
+          const info = parseExtractionRetryInfo(row.conflict_details, row.error_code);
+          if (!shouldRetryExtraction(info.attempts, row.error_code, maxRetries)) {
+            // Reached bounded retry limit; stop looping
+            excludedIds.add(row.discovery_item_id);
+          } else if (options?.includeFailed === false) {
+            excludedIds.add(row.discovery_item_id);
+          }
+        }
+      }
+
+      // 2. Compute the recency cutoff (e.g. 72h default, source-aware)
+      const recencyCutoff = getRecencyCutoffIso(options?.sourceSlug);
+
+      // 3. Query active discovery items ('new' or 'candidate')
       let query = this.client
         .from('news_discovery_items')
         .select('*, news_sources(slug, name, priority)')
+        .in('status', ['new', 'candidate'])
+        .or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`)
         .order('discovered_at', { ascending: false });
 
       if (options?.category) {
@@ -167,7 +219,7 @@ export class SupabaseExtractionRepository implements ExtractionRepository {
       }
 
       const maxLimit = options?.limit || 20;
-      query = query.limit(Math.max(maxLimit * 10, 100)); // fetch enough to filter out extracted ones
+      query = query.limit(Math.max(maxLimit * 5, 50));
 
       const { data, error } = await query;
       if (error) {
@@ -176,36 +228,52 @@ export class SupabaseExtractionRepository implements ExtractionRepository {
       }
 
       const pending: DiscoveryItem[] = [];
-      for (const row of data || []) {
-        if (!extractedIds.has(row.id)) {
-          pending.push({
-            id: row.id,
-            sourceId: row.source_id,
-            sourceSlug: row.news_sources?.slug || 'unknown-source',
-            sourceName: row.news_sources?.name || 'News Source',
-            sourceType: 'rss',
-            externalId: row.external_id,
-            sourceUrl: row.canonical_url,
-            canonicalUrl: row.canonical_url,
-            title: row.title,
-            description: row.description,
-            publishedAt: row.published_at,
-            sourceUpdatedAt: row.source_updated_at,
-            discoveredAt: row.discovered_at,
-            lastSeenAt: row.last_seen_at,
-            author: row.author,
-            imageUrl: row.image_url,
-            categoryHint: row.category_hint,
-            subcategoryHint: row.subcategory_hint,
-            rawPayload: row.raw_payload,
-            fingerprint: row.fingerprint,
-            status: row.status,
-            contentHash: row.content_hash,
-          });
+      const now = new Date();
 
-          if (pending.length >= maxLimit) {
-            break;
-          }
+      for (const row of data || []) {
+        // Exclude already completed, needs_review, or dead-lettered items
+        if (excludedIds.has(row.id)) {
+          continue;
+        }
+
+        const candidateItem: DiscoveryItem = {
+          id: row.id,
+          sourceId: row.source_id,
+          sourceSlug: row.news_sources?.slug || 'unknown-source',
+          sourceName: row.news_sources?.name || 'News Source',
+          sourceType: 'rss',
+          externalId: row.external_id,
+          sourceUrl: row.canonical_url,
+          canonicalUrl: row.canonical_url,
+          title: row.title,
+          description: row.description,
+          publishedAt: row.published_at,
+          sourceUpdatedAt: row.source_updated_at,
+          discoveredAt: row.discovered_at,
+          lastSeenAt: row.last_seen_at,
+          author: row.author,
+          imageUrl: row.image_url,
+          categoryHint: row.category_hint,
+          subcategoryHint: row.subcategory_hint,
+          rawPayload: row.raw_payload,
+          fingerprint: row.fingerprint,
+          status: row.status,
+          contentHash: row.content_hash,
+        };
+
+        // Fine-grained deterministic recency verification
+        if (!isWithinRecencyWindow(candidateItem, now)) {
+          continue;
+        }
+
+        if (options?.sourceSlug && candidateItem.sourceSlug !== options.sourceSlug) {
+          continue;
+        }
+
+        pending.push(candidateItem);
+
+        if (pending.length >= maxLimit) {
+          break;
         }
       }
 
