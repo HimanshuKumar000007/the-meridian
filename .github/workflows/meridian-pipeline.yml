@@ -2,7 +2,8 @@ name: Meridian Automation Orchestrator
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    # Secondary backup / heartbeat trigger (primary scheduler is Supabase pg_cron at */10)
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -10,20 +11,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger Meridian Orchestrator
+      - name: Trigger Meridian Orchestrator (Fallback / Heartbeat)
         env:
           AUTOMATION_CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET }}
           VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
         run: |
-          echo "Starting automated news pipeline orchestration trigger..."
+          echo "Starting automated news pipeline orchestration fallback trigger..."
 
           EXTRA_HEADERS=()
           if [ -n "$VERCEL_PROTECTION_BYPASS" ]; then
             EXTRA_HEADERS+=(-H "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}")
           fi
 
-          echo "Probing /api/automation/health..."
-          curl -s -i "${EXTRA_HEADERS[@]}" -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" https://the-meridian-aptionaiged-4225.vercel.app/api/automation/health
+          echo "Probing /api/automation/health on canonical domain..."
+          curl -s -i "${EXTRA_HEADERS[@]}" -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" https://themeridian.in/api/automation/health
 
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             --max-time 60 \
@@ -34,7 +35,7 @@ jobs:
             -H "Content-Type: application/json" \
             "${EXTRA_HEADERS[@]}" \
             -d '{"trigger":"cron"}' \
-            https://the-meridian-aptionaiged-4225.vercel.app/api/automation/orchestrator)
+            https://themeridian.in/api/automation/orchestrator)
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')

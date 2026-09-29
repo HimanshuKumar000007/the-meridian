@@ -13573,11 +13573,6 @@ async function handler(req, res) {
         error: "Unauthorized: SUPABASE_SERVICE_ROLE_KEY cannot be used as automation secret."
       });
     }
-    if (provided !== expectedSecret.trim()) {
-      return res.status(401).json({
-        error: "Unauthorized: Invalid automation credentials."
-      });
-    }
     const supabaseUrl2 = process.env.VITE_SUPABASE_URL || "https://dzbggkymgdtsyvrvrrjw.supabase.co";
     if (!serviceRoleKey) {
       return res.status(500).json({
@@ -13587,6 +13582,29 @@ async function handler(req, res) {
     const supabase = createClient2(supabaseUrl2, serviceRoleKey, {
       auth: { persistSession: false }
     });
+    let isAuthorized = Boolean(expectedSecret && expectedSecret.trim() !== "" && provided === expectedSecret.trim());
+    if (!isAuthorized) {
+      try {
+        const { data: isValid, error: rpcErr } = await supabase.rpc("verify_cron_secret", {
+          candidate: provided
+        });
+        if (!rpcErr && isValid === true) {
+          isAuthorized = true;
+        }
+      } catch (vaultErr) {
+        console.warn("[orchestrator] Vault verification check error:", vaultErr);
+      }
+    }
+    if (!isAuthorized) {
+      if (!expectedSecret || expectedSecret.trim() === "") {
+        return res.status(401).json({
+          error: "Unauthorized: AUTOMATION_CRON_SECRET is not configured on server."
+        });
+      }
+      return res.status(401).json({
+        error: "Unauthorized: Invalid automation credentials."
+      });
+    }
     const configService = new AutomationConfigService();
     const repository = new SupabaseAutomationRepository(supabase);
     const stageRunner = new StageRunnerService(supabase);
