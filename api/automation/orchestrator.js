@@ -289,19 +289,37 @@ var PipelineOrchestrator = class {
         }
         const schedule = scheduleMap.get(stage);
         const stageLimit = options.limitOverride || config2.maxBatch[stage];
+        const elapsedSinceStart = Date.now() - startTime;
+        const SERVERLESS_EXECUTION_BUDGET_MS = 48e3;
+        if (elapsedSinceStart >= SERVERLESS_EXECUTION_BUDGET_MS) {
+          stageResults[stage] = {
+            stage,
+            status: "skipped",
+            durationMs: 0,
+            processed: 0,
+            succeeded: 0,
+            failed: 0,
+            skipped: 0,
+            remainingQueue: queueDepths[stage] || 0,
+            errors: [],
+            metadata: { reason: "Stage deferred to next scheduled cycle due to serverless execution time budget." }
+          };
+          continue;
+        }
         let isDue = force;
-        if (!isDue && schedule) {
-          if (!schedule.lastRunAt) {
+        if (!isDue) {
+          if (!schedule || !schedule.lastRunAt) {
             isDue = true;
           } else {
             const nextDueTime = schedule.nextDueAt ? new Date(schedule.nextDueAt).getTime() : 0;
             const targetIntervalMs = (schedule.targetIntervalMinutes || 10) * 60 * 1e3;
             const elapsed = Date.now() - new Date(schedule.lastRunAt).getTime();
-            if (nextDueTime > 0 && Date.now() >= nextDueTime) {
+            const CLOCK_SKEW_GRACE_MS = 60 * 1e3;
+            if (nextDueTime > 0 && Date.now() >= nextDueTime - CLOCK_SKEW_GRACE_MS) {
               isDue = true;
-            } else if (elapsed >= targetIntervalMs) {
+            } else if (elapsed >= targetIntervalMs - CLOCK_SKEW_GRACE_MS) {
               isDue = true;
-            } else if (queueDepths[stage] > 0) {
+            } else if (stage !== "discovery" && (queueDepths[stage] || 0) > 0) {
               isDue = true;
             }
           }
@@ -2539,10 +2557,34 @@ ${userPrompt}`,
       }
       if (parsedObj && typeof parsedObj === "object") {
         if (typeof parsedObj.category === "string") {
-          parsedObj.category = parsedObj.category.toLowerCase().trim();
-          if (parsedObj.category === "artificial intelligence" || parsedObj.category === "genai") {
+          const cat = parsedObj.category.toLowerCase().trim();
+          if (cat === "ai" || cat.includes("artificial intelligence") || cat.includes("machine learning") || cat.includes("deep learning") || cat.includes("genai") || cat.includes("large language model") || cat.includes("frontier ai") || cat.includes("neural")) {
             parsedObj.category = "ai";
+          } else if (cat.includes("gaming") || cat.includes("videogame") || cat.includes("esport")) {
+            parsedObj.category = "gaming";
+          } else if (cat.includes("space") || cat.includes("astronomy") || cat.includes("aerospace")) {
+            parsedObj.category = "space";
+          } else if (cat.includes("cyber") || cat.includes("infosec") || cat.includes("security")) {
+            parsedObj.category = "cybersecurity";
+          } else if (cat.includes("science") || cat.includes("biology") || cat.includes("physics")) {
+            parsedObj.category = "science";
+          } else if (cat.includes("business") || cat.includes("finance") || cat.includes("market") || cat.includes("economy")) {
+            parsedObj.category = "business";
+          } else if (cat.includes("hardware") || cat.includes("chip") || cat.includes("semiconductor")) {
+            parsedObj.category = "hardware";
+          } else if (cat.includes("software") || cat.includes("app") || cat.includes("application")) {
+            parsedObj.category = "apps";
+          } else if (cat.includes("entertainment") || cat.includes("media") || cat.includes("film")) {
+            parsedObj.category = "entertainment";
+          } else if (cat.includes("world") || cat.includes("politics") || cat.includes("diplomacy")) {
+            parsedObj.category = "world";
+          } else if (cat.includes("tech")) {
+            parsedObj.category = "technology";
+          } else if (item.categoryHint && ["ai", "technology", "gaming", "science", "space", "business", "world", "entertainment", "cybersecurity", "apps", "hardware"].includes(item.categoryHint)) {
+            parsedObj.category = item.categoryHint;
           }
+        } else if (!parsedObj.category && item.categoryHint) {
+          parsedObj.category = item.categoryHint;
         }
         if (typeof parsedObj.status === "string") {
           parsedObj.status = parsedObj.status.toLowerCase().trim();
@@ -2556,6 +2598,13 @@ ${userPrompt}`,
               ent.type = ent.type.toLowerCase().trim();
             }
           }
+        }
+        if (Array.isArray(parsedObj.facts)) {
+          parsedObj.facts = parsedObj.facts.filter((f) => f && typeof f === "object" && f.label).map((f) => ({
+            ...f,
+            label: String(f.label).trim(),
+            value: f.value !== null && f.value !== void 0 ? String(f.value).trim() : "N/A"
+          })).filter((f) => f.value.length > 0);
         }
       }
       const parseResult = ExtractedPayloadSchema.safeParse(parsedObj);
@@ -2727,7 +2776,7 @@ ${userPrompt}`,
 // src/services/extraction/NvidiaClient.ts
 var DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 var DEFAULT_MODEL = "meta/llama-3.2-11b-vision-instruct";
-var DEFAULT_TIMEOUT_MS3 = 12e4;
+var DEFAULT_TIMEOUT_MS3 = 3e4;
 var DEFAULT_TEMPERATURE = 0.1;
 var DEFAULT_MAX_TOKENS = 2500;
 var NvidiaClient = class {
@@ -8329,6 +8378,9 @@ var StageRunnerService = class {
       let skipped = 0;
       const errors = [];
       for (const item of pendingItems) {
+        if (Date.now() - started > 28e3 && (succeeded > 0 || failed > 0)) {
+          break;
+        }
         try {
           const candidate = await engine.extract(item, {
             dryRun: false

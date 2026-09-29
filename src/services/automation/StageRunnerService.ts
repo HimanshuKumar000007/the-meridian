@@ -199,6 +199,11 @@ export class StageRunnerService {
       const errors: string[] = [];
 
       for (const item of pendingItems) {
+        // Guard serverless time budget: if extraction exceeded 28 seconds and we already processed at least 1 item, stop batch cleanly
+        if (Date.now() - started > 28000 && (succeeded > 0 || failed > 0)) {
+          break;
+        }
+
         try {
           const candidate = await engine.extract(item, {
             dryRun: false,

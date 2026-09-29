@@ -194,20 +194,41 @@ export class PipelineOrchestrator {
         const schedule = scheduleMap.get(stage);
         const stageLimit = options.limitOverride || config.maxBatch[stage];
 
+        // Check overall serverless execution budget (48 seconds max from orchestrator start)
+        const elapsedSinceStart = Date.now() - startTime;
+        const SERVERLESS_EXECUTION_BUDGET_MS = 48000;
+        if (elapsedSinceStart >= SERVERLESS_EXECUTION_BUDGET_MS) {
+          stageResults[stage] = {
+            stage,
+            status: 'skipped',
+            durationMs: 0,
+            processed: 0,
+            succeeded: 0,
+            failed: 0,
+            skipped: 0,
+            remainingQueue: queueDepths[stage] || 0,
+            errors: [],
+            metadata: { reason: 'Stage deferred to next scheduled cycle due to serverless execution time budget.' },
+          };
+          continue;
+        }
+
         // Check whether stage is due (or forced)
         let isDue = force;
-        if (!isDue && schedule) {
-          if (!schedule.lastRunAt) {
+        if (!isDue) {
+          if (!schedule || !schedule.lastRunAt) {
             isDue = true;
           } else {
             const nextDueTime = schedule.nextDueAt ? new Date(schedule.nextDueAt).getTime() : 0;
             const targetIntervalMs = (schedule.targetIntervalMinutes || 10) * 60 * 1000;
             const elapsed = Date.now() - new Date(schedule.lastRunAt).getTime();
-            if (nextDueTime > 0 && Date.now() >= nextDueTime) {
+            const CLOCK_SKEW_GRACE_MS = 60 * 1000; // 60s tolerance for scheduled cron jitter
+
+            if (nextDueTime > 0 && Date.now() >= nextDueTime - CLOCK_SKEW_GRACE_MS) {
               isDue = true;
-            } else if (elapsed >= targetIntervalMs) {
+            } else if (elapsed >= targetIntervalMs - CLOCK_SKEW_GRACE_MS) {
               isDue = true;
-            } else if (queueDepths[stage] > 0) {
+            } else if (stage !== 'discovery' && (queueDepths[stage] || 0) > 0) {
               // Backlog exists - eligible to process
               isDue = true;
             }

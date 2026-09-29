@@ -137,10 +137,43 @@ export class ExtractionEngine {
       // Normalize enum fields before schema validation (case-insensitivity, whitespace)
       if (parsedObj && typeof parsedObj === 'object') {
         if (typeof parsedObj.category === 'string') {
-          parsedObj.category = parsedObj.category.toLowerCase().trim();
-          if (parsedObj.category === 'artificial intelligence' || parsedObj.category === 'genai') {
+          const cat = parsedObj.category.toLowerCase().trim();
+          if (
+            cat === 'ai' ||
+            cat.includes('artificial intelligence') ||
+            cat.includes('machine learning') ||
+            cat.includes('deep learning') ||
+            cat.includes('genai') ||
+            cat.includes('large language model') ||
+            cat.includes('frontier ai') ||
+            cat.includes('neural')
+          ) {
             parsedObj.category = 'ai';
+          } else if (cat.includes('gaming') || cat.includes('videogame') || cat.includes('esport')) {
+            parsedObj.category = 'gaming';
+          } else if (cat.includes('space') || cat.includes('astronomy') || cat.includes('aerospace')) {
+            parsedObj.category = 'space';
+          } else if (cat.includes('cyber') || cat.includes('infosec') || cat.includes('security')) {
+            parsedObj.category = 'cybersecurity';
+          } else if (cat.includes('science') || cat.includes('biology') || cat.includes('physics')) {
+            parsedObj.category = 'science';
+          } else if (cat.includes('business') || cat.includes('finance') || cat.includes('market') || cat.includes('economy')) {
+            parsedObj.category = 'business';
+          } else if (cat.includes('hardware') || cat.includes('chip') || cat.includes('semiconductor')) {
+            parsedObj.category = 'hardware';
+          } else if (cat.includes('software') || cat.includes('app') || cat.includes('application')) {
+            parsedObj.category = 'apps';
+          } else if (cat.includes('entertainment') || cat.includes('media') || cat.includes('film')) {
+            parsedObj.category = 'entertainment';
+          } else if (cat.includes('world') || cat.includes('politics') || cat.includes('diplomacy')) {
+            parsedObj.category = 'world';
+          } else if (cat.includes('tech')) {
+            parsedObj.category = 'technology';
+          } else if (item.categoryHint && ['ai', 'technology', 'gaming', 'science', 'space', 'business', 'world', 'entertainment', 'cybersecurity', 'apps', 'hardware'].includes(item.categoryHint)) {
+            parsedObj.category = item.categoryHint;
           }
+        } else if (!parsedObj.category && item.categoryHint) {
+          parsedObj.category = item.categoryHint;
         }
         if (typeof parsedObj.status === 'string') {
           parsedObj.status = parsedObj.status.toLowerCase().trim();
@@ -154,6 +187,16 @@ export class ExtractionEngine {
               ent.type = ent.type.toLowerCase().trim();
             }
           }
+        }
+        if (Array.isArray(parsedObj.facts)) {
+          parsedObj.facts = parsedObj.facts
+            .filter((f: any) => f && typeof f === 'object' && f.label)
+            .map((f: any) => ({
+              ...f,
+              label: String(f.label).trim(),
+              value: f.value !== null && f.value !== undefined ? String(f.value).trim() : 'N/A',
+            }))
+            .filter((f: any) => f.value.length > 0);
         }
       }
 
