@@ -13,4 +13,4 @@ Disallow: /debug/
 Disallow: /test/
 
 # Global XML Sitemap
-Sitemap: https://themeridian.news/sitemap.xml
+Sitemap: https://themeridian.in/sitemap.xml

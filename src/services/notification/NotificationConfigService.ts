@@ -35,7 +35,13 @@ export class NotificationConfigService {
     )?.trim();
     const timeoutMs = this.parseInt(process.env.REVIEW_NOTIFICATION_TIMEOUT_MS, 5000, 500, 30000);
     const maxRetries = this.parseInt(process.env.REVIEW_NOTIFICATION_MAX_RETRIES, 2, 0, 5);
-    const baseUrl = (process.env.REVIEW_NOTIFICATION_BASE_URL || process.env.SITE_URL || 'https://the-meridian.news')
+    const baseUrl = (
+      process.env.REVIEW_BASE_URL ||
+      process.env.REVIEW_NOTIFICATION_BASE_URL ||
+      process.env.VITE_SITE_URL ||
+      process.env.SITE_URL ||
+      'https://themeridian.in'
+    )
       .trim()
       .replace(/\/+$/, '');
 

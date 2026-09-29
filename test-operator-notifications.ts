@@ -253,7 +253,7 @@ async function runOperatorNotificationsTestSuite() {
       source: 'src-tech',
       reason: 'Timeout test reason',
       category: 'tech',
-      reviewUrl: 'https://the-meridian.news/review/1',
+      reviewUrl: 'https://themeridian.in/review/1',
       timestamp: new Date().toISOString(),
     });
     const duration = Date.now() - startTimeout;
@@ -349,7 +349,7 @@ async function runOperatorNotificationsTestSuite() {
       source: 'src-nasa-breaking',
       reason: 'Sensory measurement variance flags review',
       category: 'science',
-      reviewUrl: 'https://the-meridian.news/review/val-fmt-01',
+      reviewUrl: 'https://themeridian.in/review/val-fmt-01',
       timestamp: '2026-09-28T12:00:00.000Z',
     };
 

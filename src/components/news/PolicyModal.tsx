@@ -64,7 +64,7 @@ const POLICY_DATA: Record<string, PolicyContent> = {
       },
       {
         heading: 'Submitting a Correction',
-        body: 'Readers and subjects of coverage are encouraged to notify the editorial desk at corrections@themeridian.news. Inquiries are audited within four hours during active news cycles.',
+        body: 'Readers and subjects of coverage are encouraged to notify the editorial desk at corrections@themeridian.in. Inquiries are audited within four hours during active news cycles.',
       },
     ],
   },

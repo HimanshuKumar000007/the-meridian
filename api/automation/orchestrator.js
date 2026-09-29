@@ -445,7 +445,7 @@ var PipelineOrchestrator = class {
 var DEFAULT_TIMEOUT_MS = 8e3;
 var DEFAULT_MAX_RETRIES = 2;
 var DEFAULT_MAX_SIZE_BYTES = 5 * 1024 * 1024;
-var DEFAULT_USER_AGENT = "TheMeridianBot/1.0 (+https://themeridian.news/compliance; news-discovery)";
+var DEFAULT_USER_AGENT = "TheMeridianBot/1.0 (+https://themeridian.in/compliance; news-discovery)";
 var SourceFetcher = class {
   constructor(options = {}) {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -5462,7 +5462,7 @@ var StoryLifecycleEngine = class {
     this.mergePolicy = options.mergePolicy || new StoryMergePolicy(this.matchingEngine);
     this.lifecycleVersion = options.lifecycleVersion || CURRENT_LIFECYCLE_VERSION;
     this.notificationService = options.notificationService;
-    this.baseUrl = (options.baseUrl || "https://the-meridian.news").replace(/\/+$/, "");
+    this.baseUrl = (options.baseUrl || typeof process !== "undefined" && (process.env.REVIEW_BASE_URL || process.env.REVIEW_NOTIFICATION_BASE_URL || process.env.VITE_SITE_URL) || "https://themeridian.in").replace(/\/+$/, "");
   }
   /**
    * Generates a stable URL slug from the title and a short ID
@@ -6352,7 +6352,7 @@ var NotificationConfigService = class {
     const webhookUrl = (process.env.REVIEW_NOTIFICATION_WEBHOOK_URL || process.env.DISCORD_WEBHOOK_URL)?.trim();
     const timeoutMs = this.parseInt(process.env.REVIEW_NOTIFICATION_TIMEOUT_MS, 5e3, 500, 3e4);
     const maxRetries = this.parseInt(process.env.REVIEW_NOTIFICATION_MAX_RETRIES, 2, 0, 5);
-    const baseUrl = (process.env.REVIEW_NOTIFICATION_BASE_URL || process.env.SITE_URL || "https://the-meridian.news").trim().replace(/\/+$/, "");
+    const baseUrl = (process.env.REVIEW_BASE_URL || process.env.REVIEW_NOTIFICATION_BASE_URL || process.env.VITE_SITE_URL || process.env.SITE_URL || "https://themeridian.in").trim().replace(/\/+$/, "");
     return {
       enabled,
       provider,
@@ -8815,7 +8815,7 @@ function getSiteUrl() {
     }
   }
   if (!url || url.trim() === "") {
-    url = "https://themeridian.news";
+    url = "https://themeridian.in";
   }
   url = url.trim().replace(/\/+$/, "");
   if (!/^https?:\/\//i.test(url)) {
@@ -8841,9 +8841,9 @@ var SEO_CONFIG = {
   twitterHandle: "@TheMeridianNews",
   themeColor: "#141517",
   backgroundColor: "#FAF9F6",
-  editorialEmail: "editorial@themeridian.news",
-  correctionsEmail: "corrections@themeridian.news",
-  tipsEmail: "tips@themeridian.news"
+  editorialEmail: "editorial@themeridian.in",
+  correctionsEmail: "corrections@themeridian.in",
+  tipsEmail: "tips@themeridian.in"
 };
 function getCanonicalUrl(path = "/", queryParams) {
   const baseUrl = getSiteUrl();

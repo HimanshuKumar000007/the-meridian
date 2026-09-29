@@ -341,8 +341,8 @@ async function runTests() {
   // ====================================================
   console.log('\n--- 6. Distribution Feeds (Sitemap & RSS) Tests ---');
   {
-    const sitemapService = new SitemapService('https://themeridian.news');
-    const rssService = new RssFeedService('https://themeridian.news');
+    const sitemapService = new SitemapService('https://themeridian.in');
+    const rssService = new RssFeedService('https://themeridian.in');
 
     const publishedStory = makePublishingStory({
       slug: 'james-webb-detects-new-exoplanet',
@@ -365,7 +365,7 @@ async function runTests() {
 
     // Sitemap Test
     const sitemapXml = sitemapService.generateSitemapXml(allStories);
-    assert(sitemapXml.includes('https://themeridian.news/story/james-webb-detects-new-exoplanet'), 'Test 6a: Sitemap includes published story');
+    assert(sitemapXml.includes('https://themeridian.in/story/james-webb-detects-new-exoplanet'), 'Test 6a: Sitemap includes published story');
     assert(!sitemapXml.includes('internal-unreviewed-draft'), 'Test 6b: Sitemap strictly excludes draft story');
     assert(!sitemapXml.includes('sensitive-held-story'), 'Test 6c: Sitemap strictly excludes held story');
 

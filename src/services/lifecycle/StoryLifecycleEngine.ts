@@ -55,7 +55,11 @@ export class StoryLifecycleEngine {
     this.mergePolicy = options.mergePolicy || new StoryMergePolicy(this.matchingEngine);
     this.lifecycleVersion = options.lifecycleVersion || CURRENT_LIFECYCLE_VERSION;
     this.notificationService = options.notificationService;
-    this.baseUrl = (options.baseUrl || 'https://the-meridian.news').replace(/\/+$/, '');
+    this.baseUrl = (
+      options.baseUrl ||
+      (typeof process !== 'undefined' && (process.env.REVIEW_BASE_URL || process.env.REVIEW_NOTIFICATION_BASE_URL || process.env.VITE_SITE_URL)) ||
+      'https://themeridian.in'
+    ).replace(/\/+$/, '');
   }
 
   /**

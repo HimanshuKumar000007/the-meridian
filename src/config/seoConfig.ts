@@ -21,7 +21,7 @@ export function getSiteUrl(): string {
   }
 
   if (!url || url.trim() === '') {
-    url = 'https://themeridian.news';
+    url = 'https://themeridian.in';
   }
 
   // Ensure HTTPS and strip trailing slashes
@@ -52,9 +52,9 @@ export const SEO_CONFIG = {
   twitterHandle: '@TheMeridianNews',
   themeColor: '#141517',
   backgroundColor: '#FAF9F6',
-  editorialEmail: 'editorial@themeridian.news',
-  correctionsEmail: 'corrections@themeridian.news',
-  tipsEmail: 'tips@themeridian.news',
+  editorialEmail: 'editorial@themeridian.in',
+  correctionsEmail: 'corrections@themeridian.in',
+  tipsEmail: 'tips@themeridian.in',
 };
 
 /**

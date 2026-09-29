@@ -204,7 +204,7 @@ export class MediaSecurityService {
       const response = await fetch(url, {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'TheMeridian-MediaBot/1.0 (+https://themeridian.news)',
+          'User-Agent': 'TheMeridian-MediaBot/1.0 (+https://themeridian.in)',
           Accept: 'image/webp,image/avif,image/jpeg,image/png,*/*;q=0.8',
         },
       });

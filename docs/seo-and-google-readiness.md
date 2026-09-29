@@ -18,10 +18,10 @@ To eliminate duplicate content penalties across tracking campaigns, syndication 
 
 ### Key Rules
 - **Protocol:** Strict `https://` only.
-- **Hostname:** Canonical non-www domain (`https://themeridian.news`).
+- **Hostname:** Canonical non-www domain (`https://themeridian.in`).
 - **Trailing Slashes:**
-  - Root homepage: `https://themeridian.news/` (standard root).
-  - All content routes: No trailing slash (e.g., `https://themeridian.news/technology`, `https://themeridian.news/story/quantum-computing-breakthrough`).
+  - Root homepage: `https://themeridian.in/` (standard root).
+  - All content routes: No trailing slash (e.g., `https://themeridian.in/technology`, `https://themeridian.in/story/quantum-computing-breakthrough`).
 - **Tracking Parameter Sanitization:** Strips campaign tokens (`utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`, `fbclid`, `gclid`, `msclkid`, `ref`, `source`) while strictly preserving legitimate functional application queries (`page`, `subcat`, `sort`).
 
 ---
@@ -38,7 +38,7 @@ Disallow: /api/
 Disallow: /automation/
 Disallow: /internal/
 Disallow: /admin/
-Sitemap: https://themeridian.news/sitemap.xml
+Sitemap: https://themeridian.in/sitemap.xml
 ```
 
 - **Protected Surfaces:** Internal pipeline orchestration endpoints, API keys, and background workers are inaccessible to external crawlers.
@@ -82,9 +82,9 @@ Embedded dynamically in every story page:
 
 ### `BreadcrumbList` Schema
 Enables breadcrumb navigation snippets in search engine result pages (SERPs):
-- Position 1: `Home` (`https://themeridian.news`)
-- Position 2: Category (`https://themeridian.news/technology`)
-- Position 3: Story Headline (`https://themeridian.news/story/:slug`)
+- Position 1: `Home` (`https://themeridian.in`)
+- Position 2: Category (`https://themeridian.in/technology`)
+- Position 3: Story Headline (`https://themeridian.in/story/:slug`)
 
 ### `NewsMediaOrganization` & `WebSite` Schema
 Embedded on the homepage (`index.html`) and publisher transparency pages:
@@ -99,7 +99,7 @@ Google’s Quality Rater Guidelines and Google News policies emphasize **Experie
 
 ### First-Class Editorial Surfaces
 1. **Editorial Masthead & Bureau Leadership (`/masthead`, `/about`):** Detailed leadership bios, bureau locations (London, Washington, Tokyo, Brussels), and publisher ownership.
-2. **Direct Contact Channels (`/contact`):** Dedicated editorial email (`editorial@themeridian.news`), corrections desk, confidential whistleblower tips channel, and office locations.
+2. **Direct Contact Channels (`/contact`):** Dedicated editorial email (`editorial@themeridian.in`), corrections desk, confidential whistleblower tips channel, and office locations.
 3. **Transparent Corrections Protocol (`/corrections`):** Clear policy detailing prompt amendments, inline correction notes, and public corrections audit trail.
 4. **Verified Author Profiles (`/author/:slug`):** Every correspondent has a verified profile detailing academic credentials, subject-matter expertise, bureau post, and historical bylines.
 5. **Honest AI Disclosure (`/editorial-policy`):**

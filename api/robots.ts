@@ -9,7 +9,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
-  const siteUrl = (process.env.VITE_SITE_URL || process.env.SITE_URL || 'https://themeridian.news').replace(/\/+$/, '');
+  const siteUrl = (process.env.VITE_SITE_URL || process.env.SITE_URL || 'https://themeridian.in').replace(/\/+$/, '');
 
   const content = `# Robots.txt for The Meridian — Global News Platform
 # Compliant with RFC 9309 (Robots Exclusion Protocol)

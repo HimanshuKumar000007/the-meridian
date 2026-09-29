@@ -15,7 +15,7 @@ export interface FetcherOptions {
 const DEFAULT_TIMEOUT_MS = 8000;
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB max feed size
-const DEFAULT_USER_AGENT = 'TheMeridianBot/1.0 (+https://themeridian.news/compliance; news-discovery)';
+const DEFAULT_USER_AGENT = 'TheMeridianBot/1.0 (+https://themeridian.in/compliance; news-discovery)';
 
 /**
  * Universal Source Fetcher with timeouts, retries, exponential backoff,

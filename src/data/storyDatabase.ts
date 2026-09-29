@@ -1119,7 +1119,7 @@ export function enrichStoryWithEditorialContent(story: Story): NewsStory {
     sources: [
       {
         name: 'The Meridian Editorial Bureau & Field Dispatches',
-        url: 'https://themeridian.news',
+        url: 'https://themeridian.in',
         time: story.timeDisplay,
         note: 'Direct reporting and verified documentation',
       },

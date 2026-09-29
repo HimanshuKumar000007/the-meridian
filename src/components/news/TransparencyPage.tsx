@@ -293,7 +293,7 @@ export const TransparencyPage: React.FC<TransparencyPageProps> = ({
                     <Mail className="w-4 h-4 text-red-900" /> Editorial Newsroom
                   </h3>
                   <p className="text-stone-600 mb-3">For story pitches, press releases, and general editorial inquiries:</p>
-                  <p className="font-mono font-semibold text-stone-900">editorial@themeridian.news</p>
+                  <p className="font-mono font-semibold text-stone-900">editorial@themeridian.in</p>
                 </div>
 
                 <div className="border border-hairline p-6 bg-[#FAF9F6]">
@@ -301,7 +301,7 @@ export const TransparencyPage: React.FC<TransparencyPageProps> = ({
                     <AlertCircle className="w-4 h-4 text-amber-700" /> Corrections Desk
                   </h3>
                   <p className="text-stone-600 mb-3">To report factual inaccuracies or request a clarification:</p>
-                  <p className="font-mono font-semibold text-stone-900">corrections@themeridian.news</p>
+                  <p className="font-mono font-semibold text-stone-900">corrections@themeridian.in</p>
                   <p className="text-xs text-stone-500 mt-1">Audited within four hours during active news cycles.</p>
                 </div>
 
@@ -310,7 +310,7 @@ export const TransparencyPage: React.FC<TransparencyPageProps> = ({
                     <Shield className="w-4 h-4 text-emerald-700" /> Confidential News Tips
                   </h3>
                   <p className="text-stone-600 mb-3">For whistleblowers and sensitive leaked primary documentation:</p>
-                  <p className="font-mono font-semibold text-stone-900">tips@themeridian.news</p>
+                  <p className="font-mono font-semibold text-stone-900">tips@themeridian.in</p>
                   <p className="text-xs text-stone-500 mt-1">PGP key available upon request. Signal channel available.</p>
                 </div>
 
@@ -403,7 +403,7 @@ export const TransparencyPage: React.FC<TransparencyPageProps> = ({
                   </li>
                   <li className="flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                    <span><strong>How to Report an Inaccuracy:</strong> Email <code className="font-mono text-xs bg-stone-200 px-1 py-0.5">corrections@themeridian.news</code> with article URL and supporting primary evidence.</span>
+                    <span><strong>How to Report an Inaccuracy:</strong> Email <code className="font-mono text-xs bg-stone-200 px-1 py-0.5">corrections@themeridian.in</code> with article URL and supporting primary evidence.</span>
                   </li>
                 </ul>
               </section>
@@ -512,7 +512,7 @@ export const TransparencyPage: React.FC<TransparencyPageProps> = ({
               </p>
               <h2 className="font-serif text-2xl font-bold text-stone-900">Fair Use & Syndication</h2>
               <p>
-                Academic and non-commercial quotations are permitted with proper attribution and a canonical backlink to the original article on <code className="font-mono text-sm bg-stone-100 px-1">themeridian.news</code>. For commercial syndication, contact <code className="font-mono text-sm bg-stone-100 px-1">syndication@themeridian.news</code>.
+                Academic and non-commercial quotations are permitted with proper attribution and a canonical backlink to the original article on <code className="font-mono text-sm bg-stone-100 px-1">themeridian.in</code>. For commercial syndication, contact <code className="font-mono text-sm bg-stone-100 px-1">syndication@themeridian.in</code>.
               </p>
             </div>
           )}
