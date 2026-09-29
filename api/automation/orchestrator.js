@@ -2860,7 +2860,6 @@ var NvidiaClient = class {
           }),
           signal: controller.signal
         });
-        clearTimeout(timeoutId);
         if (!response.ok) {
           const errorBody = await response.text().catch(() => "");
           if (response.status >= 400 && response.status < 500) {
@@ -2881,11 +2880,11 @@ var NvidiaClient = class {
           tokensUsed: data.usage?.total_tokens
         };
       } catch (err) {
-        clearTimeout(timeoutId);
         lastError = err;
         const isTimeout = err.name === "AbortError" || err.message?.includes("aborted");
         if (isTimeout) {
           lastError = new Error(`[NvidiaClient] Request timed out after ${this.timeoutMs}ms`);
+          break;
         }
         if (attempt < maxRetries && !err.message?.includes("Client Error")) {
           const backoffDelay = 1e3 * Math.pow(2, attempt);
@@ -2893,6 +2892,8 @@ var NvidiaClient = class {
         } else {
           break;
         }
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
     throw lastError || new Error("[NvidiaClient] Extraction request failed");

@@ -176,8 +176,6 @@ export class NvidiaClient implements ExtractionLLMProvider {
           signal: controller.signal,
         });
 
-        clearTimeout(timeoutId);
-
         if (!response.ok) {
           const errorBody = await response.text().catch(() => '');
           // Do not retry 4xx client errors (e.g. 401 Unauthorized, 403 Forbidden, 400 Bad Request)
@@ -202,12 +200,13 @@ export class NvidiaClient implements ExtractionLLMProvider {
           tokensUsed: data.usage?.total_tokens,
         };
       } catch (err: any) {
-        clearTimeout(timeoutId);
         lastError = err;
         const isTimeout = err.name === 'AbortError' || err.message?.includes('aborted');
 
         if (isTimeout) {
           lastError = new Error(`[NvidiaClient] Request timed out after ${this.timeoutMs}ms`);
+          // Never retry timed-out requests: downstream serverless functions must not exceed platform deadlines
+          break;
         }
 
         // Only retry if transient and not the final attempt
@@ -217,6 +216,8 @@ export class NvidiaClient implements ExtractionLLMProvider {
         } else {
           break;
         }
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 
