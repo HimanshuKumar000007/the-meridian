@@ -193,9 +193,12 @@ export class PublicationGateService {
 
     // Check for substantive block
     const hasSubstantiveBlock = story.content.some((b) => {
-      if (b.type === 'paragraph' && b.text && b.text.trim().length >= 40) return true;
-      if (b.type === 'quote' && b.quote && b.quote.trim().length >= 30) return true;
-      if (b.type === 'callout' && b.text && b.text.trim().length >= 40) return true;
+      const pText = b.text || b.content || '';
+      if (b.type === 'paragraph' && typeof pText === 'string' && pText.trim().length >= 40) return true;
+      const qText = b.quote || b.text || b.content || '';
+      if (b.type === 'quote' && typeof qText === 'string' && qText.trim().length >= 30) return true;
+      const cText = b.text || b.content || '';
+      if (b.type === 'callout' && typeof cText === 'string' && cText.trim().length >= 40) return true;
       return false;
     });
 
