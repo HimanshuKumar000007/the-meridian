@@ -29,6 +29,9 @@
     },
     "api/automation/health.js": {
       "maxDuration": 30
+    },
+    "api/internal/operations.js": {
+      "maxDuration": 30
     }
   }
 }

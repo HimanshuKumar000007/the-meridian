@@ -27,6 +27,7 @@ import { CategoryError } from './components/news/CategoryError';
 import { SearchPage } from './components/news/SearchPage';
 import { AuthorPage } from './components/news/AuthorPage';
 import { TransparencyPage, type TransparencyTopic } from './components/news/TransparencyPage';
+import { OperationsDashboard } from './components/operations/OperationsDashboard';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import type { HomepageData } from './types/repository';
 
@@ -121,6 +122,7 @@ const StoryRoute: React.FC<StoryRouteProps> = ({
 
 type RouteState =
   | { type: 'home' }
+  | { type: 'operations' }
   | { type: 'story'; slug: string }
   | { type: 'category'; categorySlug: string; subcategorySlug: string }
   | { type: 'search'; query: string; category?: string }
@@ -135,6 +137,11 @@ function parseCurrentRoute(): RouteState {
 
   if (parts.length === 0) {
     return { type: 'home' };
+  }
+
+  // 0. Private Operations Dashboard: /internal/operations
+  if (parts[0] === 'internal' && parts[1] === 'operations') {
+    return { type: 'operations' };
   }
 
   // 1. Search route: /search?q=...
@@ -345,6 +352,11 @@ function MainApp() {
   const businessStories = homepageData?.businessStories || [];
   const worldStories = homepageData?.worldStories || [];
   const allStories = useMemo(() => newsRepository.getLatestStoriesSync?.(25) || [], []);
+
+  // Dedicated Private Operations Dashboard Route
+  if (route.type === 'operations') {
+    return <OperationsDashboard onNavigateHome={navigateToHome} />;
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] text-[#141517] flex flex-col font-sans selection:bg-stone-200 selection:text-stone-900">
