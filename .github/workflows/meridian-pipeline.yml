@@ -28,8 +28,6 @@ jobs:
 
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             --max-time 60 \
-            --retry 1 \
-            --retry-delay 2 \
             -X POST \
             -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" \
             -H "Content-Type: application/json" \

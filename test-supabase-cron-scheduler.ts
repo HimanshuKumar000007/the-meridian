@@ -68,9 +68,13 @@ async function runTests() {
     assert(workflowContent.includes("cron: '0 * * * *'"), 'Test 3a: Workflow configured with hourly fallback cron');
     assert(workflowContent.includes('https://themeridian.in/api/automation/orchestrator'), 'Test 3b: Workflow targets canonical domain');
     assert(!workflowContent.includes("cron: '*/10 * * * *'"), 'Test 3c: 10-minute cron removed from GitHub Actions (now in Supabase pg_cron)');
+    assert(!workflowContent.includes('--retry'), 'Test 3d: No automatic curl --retry flags in backup workflow (prevents duplicate orchestrator runs)');
+    assert(workflowContent.includes('-X POST'), 'Test 3e: Single explicit POST request configured without retries');
     console.log('✅ [PASS] Test 3a: Workflow configured with hourly fallback cron (0 * * * *)');
     console.log('✅ [PASS] Test 3b: Workflow targets canonical production domain (https://themeridian.in)');
     console.log('✅ [PASS] Test 3c: 10-minute cadence migrated out of GitHub Actions');
+    console.log('✅ [PASS] Test 3d: Zero curl retry flags in backup workflow');
+    console.log('✅ [PASS] Test 3e: Single POST request per invocation enforced');
   }
 
   // --- 4. SAFETY INVARIANTS CHECK ---
