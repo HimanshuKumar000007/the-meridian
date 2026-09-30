@@ -199,8 +199,8 @@ export class StageRunnerService {
       const errors: string[] = [];
 
       for (const item of pendingItems) {
-        // Guard serverless time budget: if extraction exceeded 55 seconds and we already processed at least 1 item, stop batch cleanly
-        if (Date.now() - started > 55000 && (succeeded > 0 || failed > 0)) {
+        // Guard serverless time budget: if extraction exceeded 75 seconds and we already processed at least 1 item, stop batch cleanly
+        if (Date.now() - started > 75000 && (succeeded > 0 || failed > 0)) {
           break;
         }
 
