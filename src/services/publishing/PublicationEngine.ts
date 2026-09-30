@@ -14,17 +14,22 @@ import type {
 import type { PublicationRepository } from '../../data/repositories/PublicationRepository';
 import { PublicationGateService } from './PublicationGateService';
 import { PublicationPolicyService } from './PublicationPolicyService';
+import type { OperatorNotificationService } from '../notification/OperatorNotificationService';
 
 export interface PublicationEngineOptions {
   repository: PublicationRepository;
   gateService?: PublicationGateService;
   policyService?: PublicationPolicyService;
+  notificationService?: OperatorNotificationService;
+  baseUrl?: string;
 }
 
 export class PublicationEngine {
   private repository: PublicationRepository;
   private gateService: PublicationGateService;
   private policyService: PublicationPolicyService;
+  private notificationService?: OperatorNotificationService;
+  private baseUrl: string;
 
   // In-flight concurrency lock per story ID
   private static inFlightStoryLocks: Map<string, Promise<any>> = new Map();
@@ -34,6 +39,12 @@ export class PublicationEngine {
     this.policyService = options.policyService || new PublicationPolicyService();
     this.gateService =
       options.gateService || new PublicationGateService(this.policyService);
+    this.notificationService = options.notificationService;
+    this.baseUrl = (
+      options.baseUrl ||
+      (typeof process !== 'undefined' && (process.env.REVIEW_BASE_URL || process.env.REVIEW_NOTIFICATION_BASE_URL || process.env.VITE_SITE_URL)) ||
+      'https://themeridian.in'
+    ).replace(/\/+$/, '');
   }
 
   public getPolicyService(): PublicationPolicyService {
@@ -201,6 +212,30 @@ export class PublicationEngine {
       };
 
       await this.repository.holdOrRejectStory(storyId, targetStatus, event);
+
+      if (gateDecision.decision === 'HOLD' && this.notificationService && !options.dryRun) {
+        try {
+          await this.notificationService.notifyReviewRequired({
+            storyId,
+            headline: input.story.title,
+            source: input.story.sources?.[0]?.name || input.story.sources?.[0]?.url || 'unknown',
+            reason: gateDecision.reason + ': ' + gateDecision.blockingIssues.join('; '),
+            category: input.story.category,
+            reviewUrl: `${this.baseUrl}/review/${input.validation?.id || storyId}`,
+            timestamp: now,
+            validationId: input.validation?.id,
+            extractionId: input.extraction?.id,
+            validationStatus: input.validation?.status || 'needs_review',
+            issues: gateDecision.blockingIssues.map((msg) => ({
+              code: gateDecision.reason,
+              severity: 'warning',
+              message: msg,
+            })),
+          });
+        } catch (notifErr) {
+          console.warn('[PublicationEngine] Fail-safe caught notification error:', notifErr);
+        }
+      }
 
       return {
         decision: gateDecision,

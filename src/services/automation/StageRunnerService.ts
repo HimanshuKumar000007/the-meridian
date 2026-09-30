@@ -452,6 +452,11 @@ export class StageRunnerService {
         notificationService,
       });
 
+      const pubRepo =
+        this.supabaseClient && !this.isMock
+          ? new SupabasePublicationRepository(this.supabaseClient)
+          : new MockPublicationRepository();
+
       let succeeded = 0;
       let failed = 0;
       let skipped = 0;
@@ -471,6 +476,40 @@ export class StageRunnerService {
 
           if (decision.action === 'CREATE' || decision.action === 'UPDATE') {
             succeeded++;
+
+            // Backlog safety guard: Only enqueue NEW candidates created after activation
+            // Historical or stale candidates (e.g. from prior backlog) are kept as drafts without auto-queueing
+            const ACTIVATION_CUTOFF_ISO =
+              process.env.AUTOMATION_PUBLISHING_ACTIVATION_CUTOFF || '2026-09-30T04:45:00.000Z';
+            const cutoffMs = new Date(ACTIVATION_CUTOFF_ISO).getTime();
+            const valCreatedAt = item.validation?.createdAt || (item.validation as any)?.created_at;
+            const extCreatedAt = item.extraction?.createdAt || (item.extraction as any)?.created_at;
+
+            const isNewCandidate =
+              valCreatedAt &&
+              extCreatedAt &&
+              new Date(valCreatedAt).getTime() >= cutoffMs &&
+              new Date(extCreatedAt).getTime() >= cutoffMs;
+
+            if (isNewCandidate && decision.storyId && !options.dryRun) {
+              const queueId = `pubq_${decision.storyId}`;
+              await pubRepo.saveQueueItem({
+                id: queueId,
+                storyId: decision.storyId,
+                lifecycleEventId: decision.id,
+                priority: 1,
+                status: 'queued',
+                attempts: 0,
+                maxAttempts: 3,
+                metadata: {
+                  source: 'lifecycle_auto_enqueue',
+                  action: decision.action,
+                  enqueuedAt: new Date().toISOString(),
+                },
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+            }
           } else {
             skipped++;
           }
@@ -519,12 +558,22 @@ export class StageRunnerService {
           ? new SupabasePublicationRepository(this.supabaseClient)
           : new MockPublicationRepository();
 
+      const notificationRepo =
+        this.supabaseClient && !this.isMock
+          ? new SupabaseReviewNotificationStateRepository(this.supabaseClient)
+          : new MemoryReviewNotificationStateRepository();
+
+      const notificationService = new OperatorNotificationService({
+        stateRepository: notificationRepo,
+      });
+
       const policyService = new PublicationPolicyService();
       const gateService = new PublicationGateService(policyService);
       const engine = new PublicationEngine({
         repository: repo,
         policyService,
         gateService,
+        notificationService,
       });
 
       const queuedItems = await repo.getQueuedItems(limit);

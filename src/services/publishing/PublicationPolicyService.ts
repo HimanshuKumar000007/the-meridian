@@ -30,8 +30,12 @@ export const DEFAULT_PUBLICATION_POLICY: PublicationPolicyConfig = {
     'disasters',
   ],
   automatedPublishingEnabled:
-    process.env.AUTOMATED_PUBLISHING_ENABLED !== 'false' &&
-    process.env.AUTOMATED_PUBLISHING_ENABLED !== '0',
+    process.env.AUTOMATION_PUBLISHING_ENABLED === 'false' ||
+    process.env.AUTOMATION_PUBLISHING_ENABLED === '0' ||
+    process.env.AUTOMATED_PUBLISHING_ENABLED === 'false' ||
+    process.env.AUTOMATED_PUBLISHING_ENABLED === '0'
+      ? false
+      : true,
   categorySwitches: {
     technology: true,
     gaming: true,

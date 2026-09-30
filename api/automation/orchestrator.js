@@ -4322,7 +4322,7 @@ var DEFAULT_PUBLICATION_POLICY = {
     "business",
     "disasters"
   ],
-  automatedPublishingEnabled: process.env.AUTOMATED_PUBLISHING_ENABLED !== "false" && process.env.AUTOMATED_PUBLISHING_ENABLED !== "0",
+  automatedPublishingEnabled: process.env.AUTOMATION_PUBLISHING_ENABLED === "false" || process.env.AUTOMATION_PUBLISHING_ENABLED === "0" || process.env.AUTOMATED_PUBLISHING_ENABLED === "false" || process.env.AUTOMATED_PUBLISHING_ENABLED === "0" ? false : true,
   categorySwitches: {
     technology: true,
     gaming: true,
@@ -7278,6 +7278,8 @@ var PublicationEngine = class _PublicationEngine {
     this.repository = options.repository;
     this.policyService = options.policyService || new PublicationPolicyService();
     this.gateService = options.gateService || new PublicationGateService(this.policyService);
+    this.notificationService = options.notificationService;
+    this.baseUrl = (options.baseUrl || typeof process !== "undefined" && (process.env.REVIEW_BASE_URL || process.env.REVIEW_NOTIFICATION_BASE_URL || process.env.VITE_SITE_URL) || "https://themeridian.in").replace(/\/+$/, "");
   }
   getPolicyService() {
     return this.policyService;
@@ -7399,6 +7401,29 @@ var PublicationEngine = class _PublicationEngine {
         createdAt: now
       };
       await this.repository.holdOrRejectStory(storyId, targetStatus, event);
+      if (gateDecision.decision === "HOLD" && this.notificationService && !options.dryRun) {
+        try {
+          await this.notificationService.notifyReviewRequired({
+            storyId,
+            headline: input.story.title,
+            source: input.story.sources?.[0]?.name || input.story.sources?.[0]?.url || "unknown",
+            reason: gateDecision.reason + ": " + gateDecision.blockingIssues.join("; "),
+            category: input.story.category,
+            reviewUrl: `${this.baseUrl}/review/${input.validation?.id || storyId}`,
+            timestamp: now,
+            validationId: input.validation?.id,
+            extractionId: input.extraction?.id,
+            validationStatus: input.validation?.status || "needs_review",
+            issues: gateDecision.blockingIssues.map((msg) => ({
+              code: gateDecision.reason,
+              severity: "warning",
+              message: msg
+            }))
+          });
+        } catch (notifErr) {
+          console.warn("[PublicationEngine] Fail-safe caught notification error:", notifErr);
+        }
+      }
       return {
         decision: gateDecision,
         story: { ...currentStory, status: targetStatus },
@@ -8592,6 +8617,7 @@ var StageRunnerService = class {
         lifecycleVersion: CURRENT_LIFECYCLE_VERSION,
         notificationService
       });
+      const pubRepo = this.supabaseClient && !this.isMock ? new SupabasePublicationRepository(this.supabaseClient) : new MockPublicationRepository();
       let succeeded = 0;
       let failed = 0;
       let skipped = 0;
@@ -8607,6 +8633,30 @@ var StageRunnerService = class {
           });
           if (decision.action === "CREATE" || decision.action === "UPDATE") {
             succeeded++;
+            const ACTIVATION_CUTOFF_ISO = process.env.AUTOMATION_PUBLISHING_ACTIVATION_CUTOFF || "2026-09-30T04:45:00.000Z";
+            const cutoffMs = new Date(ACTIVATION_CUTOFF_ISO).getTime();
+            const valCreatedAt = item.validation?.createdAt || item.validation?.created_at;
+            const extCreatedAt = item.extraction?.createdAt || item.extraction?.created_at;
+            const isNewCandidate = valCreatedAt && extCreatedAt && new Date(valCreatedAt).getTime() >= cutoffMs && new Date(extCreatedAt).getTime() >= cutoffMs;
+            if (isNewCandidate && decision.storyId && !options.dryRun) {
+              const queueId = `pubq_${decision.storyId}`;
+              await pubRepo.saveQueueItem({
+                id: queueId,
+                storyId: decision.storyId,
+                lifecycleEventId: decision.id,
+                priority: 1,
+                status: "queued",
+                attempts: 0,
+                maxAttempts: 3,
+                metadata: {
+                  source: "lifecycle_auto_enqueue",
+                  action: decision.action,
+                  enqueuedAt: (/* @__PURE__ */ new Date()).toISOString()
+                },
+                createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+                updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+              });
+            }
           } else {
             skipped++;
           }
@@ -8647,12 +8697,17 @@ var StageRunnerService = class {
     const limit = options.limit || 5;
     try {
       const repo = this.supabaseClient && !this.isMock ? new SupabasePublicationRepository(this.supabaseClient) : new MockPublicationRepository();
+      const notificationRepo = this.supabaseClient && !this.isMock ? new SupabaseReviewNotificationStateRepository(this.supabaseClient) : new MemoryReviewNotificationStateRepository();
+      const notificationService = new OperatorNotificationService({
+        stateRepository: notificationRepo
+      });
       const policyService = new PublicationPolicyService();
       const gateService = new PublicationGateService(policyService);
       const engine = new PublicationEngine({
         repository: repo,
         policyService,
-        gateService
+        gateService,
+        notificationService
       });
       const queuedItems = await repo.getQueuedItems(limit);
       if (options.dryRun) {
