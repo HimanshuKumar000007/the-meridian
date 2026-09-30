@@ -2026,7 +2026,9 @@ var SourceContentAcquisitionService = class {
    *    If >= 120 but < DEEP_RECOVERY_THRESHOLD_CHARS → attempt bounded source recovery with
    *       sourceRecoveryTimeoutMs budget. If recovery yields richer text → use it.
    *       If recovery is too slow, blocked, or fails → fall back to existing RSS text safely.
-   *       This prevents short-snippet items from causing NVIDIA timeout while preserving quality.
+   *       EXCEPTION: if the RSS text ends with a paywall/truncation sentinel ("Read more" etc.)
+   *       AND recovery also fails → return fetchStatus='blocked' so ExtractionEngine can
+   *       dead-letter immediately without a NVIDIA call (saves one wasted orchestrator window).
    *    If < 120 chars → Deep Source Recovery (existing behavior).
    *       If deep fetch succeeds and yields substantive text (>= 120 chars) → enrich.
    *       If deep fetch fails, times out, or is blocked → retain safe fallback metadata (< 120 chars).
@@ -2041,6 +2043,8 @@ var SourceContentAcquisitionService = class {
     const startTime = Date.now();
     const existingRaw = (item.description || item.rawPayload?.content || "").trim();
     const existingCombined = [item.title, existingRaw].filter(Boolean).join("\n\n").trim();
+    const GATED_SENTINELS = /(?:read\s+more|continue\s+reading|read\s+the\s+full\s+(?:article|story|post)|more\s+at\s+\S+|subscribe\s+to\s+read|sign\s+in\s+to\s+read|click\s+to\s+read|\.{3,}\s*$|\[\.\.\.\]|…)$/i;
+    const isGatedSource = existingCombined.length < DEEP_RECOVERY_THRESHOLD_CHARS && GATED_SENTINELS.test(existingRaw.trim());
     if (existingCombined.length >= DEEP_RECOVERY_THRESHOLD_CHARS) {
       const wordCount = existingCombined.split(/\s+/).filter(Boolean).length;
       return {
@@ -2088,7 +2092,8 @@ var SourceContentAcquisitionService = class {
         item,
         targetUrl2,
         existingCombined,
-        startTime
+        startTime,
+        isGatedSource
       );
       this.fetchCache.set(cacheKey, enrichPromise);
       return enrichPromise;
@@ -2116,9 +2121,14 @@ var SourceContentAcquisitionService = class {
    * than the existing RSS snippet, the enriched content is returned. Otherwise the
    * existing RSS text is returned as a safe fallback.
    *
+   * @param isGatedSource - When true (RSS ends with "Read more" etc.), failed recovery returns
+   *   fetchStatus='blocked' so ExtractionEngine can dead-letter in 1 attempt without a NVIDIA call.
+   *   When false, failed recovery returns fetchStatus='sufficient_metadata' (safe fallback).
+   *
    * This path never discards existing sufficient content — it only enriches.
    */
-  async performBoundedEnrichmentFetch(item, targetUrl, existingText, startTime) {
+  async performBoundedEnrichmentFetch(item, targetUrl, existingText, startTime, isGatedSource = false) {
+    const failStatus = isGatedSource ? "blocked" : "sufficient_metadata";
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.sourceRecoveryTimeoutMs);
     try {
@@ -2148,10 +2158,10 @@ var SourceContentAcquisitionService = class {
           articleText: existingText,
           wordCount: wordCount2,
           isTruncated: false,
-          fetchStatus: "sufficient_metadata",
+          fetchStatus: failStatus,
           statusCode: response.status,
           durationMs: recoveryDurationMs,
-          error: `SOURCE_RECOVERY_FAILED: HTTP ${response.status} \u2014 using existing RSS text`
+          error: `SOURCE_RECOVERY_FAILED: HTTP ${response.status}${isGatedSource ? " (gated source \u2014 content_gated)" : " \u2014 using existing RSS text"}`
         };
       }
       const contentType = response.headers.get("content-type") || "";
@@ -2168,10 +2178,10 @@ var SourceContentAcquisitionService = class {
           articleText: existingText,
           wordCount: wordCount2,
           isTruncated: false,
-          fetchStatus: "sufficient_metadata",
+          fetchStatus: failStatus,
           statusCode: response.status,
           durationMs: recoveryDurationMs,
-          error: `SOURCE_RECOVERY_FAILED: Unsupported Content-Type ${contentType} \u2014 using existing RSS text`
+          error: `SOURCE_RECOVERY_FAILED: Unsupported Content-Type ${contentType}${isGatedSource ? " (gated source)" : " \u2014 using existing RSS text"}`
         };
       }
       const rawHtml = await response.text();
@@ -2188,10 +2198,10 @@ var SourceContentAcquisitionService = class {
           articleText: existingText,
           wordCount: wordCount2,
           isTruncated: false,
-          fetchStatus: "sufficient_metadata",
+          fetchStatus: failStatus,
           statusCode: response.status,
           durationMs: recoveryDurationMs,
-          error: `SOURCE_RECOVERY_FAILED: Response too large (${rawHtml.length} bytes) \u2014 using existing RSS text`
+          error: `SOURCE_RECOVERY_FAILED: Response too large (${rawHtml.length} bytes)${isGatedSource ? " (gated source)" : " \u2014 using existing RSS text"}`
         };
       }
       const extracted = this.extractAndCleanHtml(rawHtml, targetUrl);
@@ -2211,10 +2221,10 @@ var SourceContentAcquisitionService = class {
           articleText: existingText,
           wordCount: wordCount2,
           isTruncated: false,
-          fetchStatus: "sufficient_metadata",
+          fetchStatus: failStatus,
           statusCode: response.status,
           durationMs: recoveryDurationMs,
-          error: "SOURCE_RECOVERY_FAILED: UNRELATED_OR_EMPTY_HTML \u2014 using existing RSS text"
+          error: `SOURCE_RECOVERY_FAILED: UNRELATED_OR_EMPTY_HTML${isGatedSource ? " (gated source \u2014 CAPTCHA or JS gate)" : " \u2014 using existing RSS text"}`
         };
       }
       let fullArticleText = extracted.articleText;
@@ -2236,10 +2246,11 @@ ${fullArticleText}`;
           articleText: existingText,
           wordCount: wordCount2,
           isTruncated: false,
-          fetchStatus: "sufficient_metadata",
+          // If gated and recovered text is not richer, treat as blocked — the source is confirmed gated
+          fetchStatus: isGatedSource ? "blocked" : "sufficient_metadata",
           statusCode: response.status,
           durationMs: recoveryDurationMs,
-          error: "SOURCE_RECOVERY_SKIPPED: Recovered text not richer than RSS \u2014 using RSS text"
+          error: isGatedSource ? "SOURCE_RECOVERY_FAILED: Recovered text not richer (gated source \u2014 confirmed truncated feed)" : "SOURCE_RECOVERY_SKIPPED: Recovered text not richer than RSS \u2014 using RSS text"
         };
       }
       const isTruncated = fullArticleText.length > this.maxCharacters;
@@ -2276,10 +2287,10 @@ ${fullArticleText}`;
         articleText: existingText,
         wordCount,
         isTruncated: false,
-        fetchStatus: "sufficient_metadata",
+        fetchStatus: isGatedSource ? "blocked" : "sufficient_metadata",
         statusCode: isTimeout ? 408 : void 0,
         durationMs: recoveryDurationMs,
-        error: isTimeout ? `SOURCE_RECOVERY_TIMEOUT: Bounded fetch timed out after ${this.sourceRecoveryTimeoutMs}ms \u2014 using existing RSS text` : `SOURCE_RECOVERY_FAILED: ${err.message || "Network error"} \u2014 using existing RSS text`
+        error: isTimeout ? `SOURCE_RECOVERY_TIMEOUT: Bounded fetch timed out after ${this.sourceRecoveryTimeoutMs}ms${isGatedSource ? " (gated source)" : " \u2014 using existing RSS text"}` : `SOURCE_RECOVERY_FAILED: ${err.message || "Network error"}${isGatedSource ? " (gated source)" : " \u2014 using existing RSS text"}`
       };
     }
   }
@@ -2724,6 +2735,45 @@ var ExtractionEngine = class {
     const promptVersion = options.promptVersion || CURRENT_PROMPT_VERSION;
     const acquired = await this.acquisitionService.acquireContent(item);
     const inputHash = this.generateInputHash(item, acquired.articleText);
+    if (acquired.fetchStatus === "blocked") {
+      const errorMsg = `[ExtractionEngine] Source is gated/blocked for item ${item.id}: ${acquired.error || "CONTENT_GATED"}`;
+      const now2 = (/* @__PURE__ */ new Date()).toISOString();
+      const candidateId2 = `ext-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      let previousAttempts = 0;
+      if (this.repository) {
+        try {
+          const existing = await this.repository.findExtraction(item.id, inputHash, promptVersion);
+          if (existing) {
+            const info = parseExtractionRetryInfo(existing.conflict_details, existing.error_code);
+            previousAttempts = info.attempts;
+          }
+        } catch {
+        }
+      }
+      const failedRecord = {
+        id: candidateId2,
+        discovery_item_id: item.id,
+        status: "failed",
+        model: "unknown",
+        prompt_version: promptVersion,
+        input_hash: inputHash,
+        error_code: DEAD_LETTER_ERROR_CODE,
+        error_message: errorMsg,
+        conflict_details: JSON.stringify({
+          attempts: previousAttempts + 1,
+          deadLettered: true,
+          lastAttemptAt: now2,
+          lastError: acquired.error || "CONTENT_GATED"
+        }),
+        created_at: now2,
+        updated_at: now2
+      };
+      if (!options.dryRun && this.repository) {
+        await this.repository.saveExtraction(failedRecord);
+        await this.repository.updateDiscoveryItemStatus(item.id, "failed");
+      }
+      throw new Error(errorMsg);
+    }
     if (!options.forceRerun && this.repository) {
       const existing = await this.repository.findExtraction(item.id, inputHash, promptVersion);
       if (existing && existing.status === "completed") {
@@ -2805,11 +2855,62 @@ ${userPrompt}`,
           parsedObj.confidenceLevel = parsedObj.confidenceLevel.toLowerCase().trim();
         }
         if (Array.isArray(parsedObj.entities)) {
-          for (const ent of parsedObj.entities) {
-            if (ent && typeof ent.type === "string") {
-              ent.type = ent.type.toLowerCase().trim();
+          const ENTITY_TYPE_MAP = {
+            // Direct enum values (lowercase passthrough)
+            person: "person",
+            company: "company",
+            organization: "organization",
+            organisation: "organization",
+            org: "organization",
+            product: "product",
+            game: "game",
+            videogame: "game",
+            "video game": "game",
+            technology: "technology",
+            tech: "technology",
+            software: "technology",
+            hardware: "technology",
+            platform: "technology",
+            framework: "technology",
+            location: "location",
+            place: "location",
+            country: "location",
+            city: "location",
+            region: "location",
+            nation: "location",
+            state: "location",
+            event: "event",
+            conference: "event",
+            festival: "event",
+            tournament: "event",
+            // Common LLM over-generations mapped to nearest enum member
+            brand: "company",
+            studio: "company",
+            developer: "company",
+            publisher: "company",
+            institution: "organization",
+            agency: "organization",
+            government: "organization",
+            ngo: "organization",
+            university: "organization",
+            standard: "product",
+            model: "product",
+            service: "product",
+            app: "product",
+            application: "product",
+            device: "product",
+            franchise: "game",
+            series: "game",
+            title: "game"
+          };
+          parsedObj.entities = parsedObj.entities.filter((ent) => ent && typeof ent === "object" && ent.name).map((ent) => {
+            if (typeof ent.type === "string") {
+              const normalized = ent.type.toLowerCase().trim().replace(/[_\-]/g, " ");
+              const mapped = ENTITY_TYPE_MAP[normalized];
+              return mapped ? { ...ent, type: mapped } : null;
             }
-          }
+            return null;
+          }).filter(Boolean);
         }
         if (Array.isArray(parsedObj.facts)) {
           parsedObj.facts = parsedObj.facts.filter((f) => f && typeof f === "object" && f.label).map((f) => ({

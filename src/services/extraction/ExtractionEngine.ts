@@ -82,6 +82,54 @@ export class ExtractionEngine {
     const acquired = await this.acquisitionService.acquireContent(item);
     const inputHash = this.generateInputHash(item, acquired.articleText);
 
+    // Early-exit gate: gated/blocked source confirmed — dead-letter immediately without NVIDIA call.
+    // This fires when the source returned fetchStatus='blocked' (e.g. RSS ends with "Read more"
+    // sentinel AND enrichment fetch returned blocked/JS-gated/non-enriching content).
+    // Saves the full NVIDIA 35s budget per item and frees the orchestrator window for valid items.
+    if (acquired.fetchStatus === 'blocked') {
+      const errorMsg = `[ExtractionEngine] Source is gated/blocked for item ${item.id}: ${acquired.error || 'CONTENT_GATED'}`;
+      const now = new Date().toISOString();
+      const candidateId = `ext-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      let previousAttempts = 0;
+      if (this.repository) {
+        try {
+          const existing = await this.repository.findExtraction(item.id, inputHash, promptVersion);
+          if (existing) {
+            const info = parseExtractionRetryInfo(existing.conflict_details, existing.error_code);
+            previousAttempts = info.attempts;
+          }
+        } catch {}
+      }
+
+      // Gated sources dead-letter immediately — no retries, they will never succeed
+      const failedRecord: NewsExtractionRecord = {
+        id: candidateId,
+        discovery_item_id: item.id,
+        status: 'failed',
+        model: 'unknown',
+        prompt_version: promptVersion,
+        input_hash: inputHash,
+        error_code: DEAD_LETTER_ERROR_CODE,
+        error_message: errorMsg,
+        conflict_details: JSON.stringify({
+          attempts: previousAttempts + 1,
+          deadLettered: true,
+          lastAttemptAt: now,
+          lastError: acquired.error || 'CONTENT_GATED',
+        }),
+        created_at: now,
+        updated_at: now,
+      };
+
+      if (!options.dryRun && this.repository) {
+        await this.repository.saveExtraction(failedRecord);
+        await this.repository.updateDiscoveryItemStatus(item.id, 'failed');
+      }
+
+      throw new Error(errorMsg);
+    }
+
     // 2. Idempotency Check: Check if already extracted
     if (!options.forceRerun && this.repository) {
       const existing = await this.repository.findExtraction(item.id, inputHash, promptVersion);
@@ -89,6 +137,7 @@ export class ExtractionEngine {
         return this.mapRecordToCandidate(existing, item);
       }
     }
+
 
     // 3. Build Prompts
     const promptInput: PromptInput = {
@@ -182,12 +231,75 @@ export class ExtractionEngine {
           parsedObj.confidenceLevel = parsedObj.confidenceLevel.toLowerCase().trim();
         }
         if (Array.isArray(parsedObj.entities)) {
-          for (const ent of parsedObj.entities) {
-            if (ent && typeof ent.type === 'string') {
-              ent.type = ent.type.toLowerCase().trim();
-            }
-          }
+          /**
+           * Entity type normalization map.
+           * Maps values the LLM commonly returns that are NOT in the enum
+           * to the closest valid EntityTypeEnum member.
+           * Unknown types that cannot be mapped are dropped from the array
+           * rather than failing the entire extraction with a schema error.
+           */
+          const ENTITY_TYPE_MAP: Record<string, string> = {
+            // Direct enum values (lowercase passthrough)
+            person: 'person',
+            company: 'company',
+            organization: 'organization',
+            organisation: 'organization',
+            org: 'organization',
+            product: 'product',
+            game: 'game',
+            videogame: 'game',
+            'video game': 'game',
+            technology: 'technology',
+            tech: 'technology',
+            software: 'technology',
+            hardware: 'technology',
+            platform: 'technology',
+            framework: 'technology',
+            location: 'location',
+            place: 'location',
+            country: 'location',
+            city: 'location',
+            region: 'location',
+            nation: 'location',
+            state: 'location',
+            event: 'event',
+            conference: 'event',
+            festival: 'event',
+            tournament: 'event',
+            // Common LLM over-generations mapped to nearest enum member
+            brand: 'company',
+            studio: 'company',
+            developer: 'company',
+            publisher: 'company',
+            institution: 'organization',
+            agency: 'organization',
+            government: 'organization',
+            ngo: 'organization',
+            university: 'organization',
+            standard: 'product',
+            model: 'product',
+            service: 'product',
+            app: 'product',
+            application: 'product',
+            device: 'product',
+            franchise: 'game',
+            series: 'game',
+            title: 'game',
+          };
+
+          parsedObj.entities = parsedObj.entities
+            .filter((ent: any) => ent && typeof ent === 'object' && ent.name)
+            .map((ent: any) => {
+              if (typeof ent.type === 'string') {
+                const normalized = ent.type.toLowerCase().trim().replace(/[_\-]/g, ' ');
+                const mapped = ENTITY_TYPE_MAP[normalized];
+                return mapped ? { ...ent, type: mapped } : null;
+              }
+              return null;
+            })
+            .filter(Boolean);
         }
+
         if (Array.isArray(parsedObj.facts)) {
           parsedObj.facts = parsedObj.facts
             .filter((f: any) => f && typeof f === 'object' && f.label)

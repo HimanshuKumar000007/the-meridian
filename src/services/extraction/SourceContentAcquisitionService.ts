@@ -127,7 +127,9 @@ export class SourceContentAcquisitionService {
    *    If >= 120 but < DEEP_RECOVERY_THRESHOLD_CHARS → attempt bounded source recovery with
    *       sourceRecoveryTimeoutMs budget. If recovery yields richer text → use it.
    *       If recovery is too slow, blocked, or fails → fall back to existing RSS text safely.
-   *       This prevents short-snippet items from causing NVIDIA timeout while preserving quality.
+   *       EXCEPTION: if the RSS text ends with a paywall/truncation sentinel ("Read more" etc.)
+   *       AND recovery also fails → return fetchStatus='blocked' so ExtractionEngine can
+   *       dead-letter immediately without a NVIDIA call (saves one wasted orchestrator window).
    *    If < 120 chars → Deep Source Recovery (existing behavior).
    *       If deep fetch succeeds and yields substantive text (>= 120 chars) → enrich.
    *       If deep fetch fails, times out, or is blocked → retain safe fallback metadata (< 120 chars).
@@ -142,6 +144,22 @@ export class SourceContentAcquisitionService {
     const startTime = Date.now();
     const existingRaw = (item.description || (item.rawPayload as any)?.content || '').trim();
     const existingCombined = [item.title, existingRaw].filter(Boolean).join('\n\n').trim();
+
+    /**
+     * Gated-source detection: identify RSS items whose content is deliberately truncated
+     * by the publisher's feed. These items end with a paywall/truncation sentinel phrase
+     * and will never yield a full article from the RSS metadata alone.
+     *
+     * Common sentinels: "Read more", "Continue reading", "… [Read more]", "Read the full article"
+     * When detected AND recovery also fails → return fetchStatus='blocked' so the extraction
+     * engine can dead-letter without wasting the NVIDIA API budget.
+     *
+     * Only applied to items < 800 chars (Tier 1 items are already substantive enough).
+     */
+    const GATED_SENTINELS = /(?:read\s+more|continue\s+reading|read\s+the\s+full\s+(?:article|story|post)|more\s+at\s+\S+|subscribe\s+to\s+read|sign\s+in\s+to\s+read|click\s+to\s+read|\.{3,}\s*$|\[\.\.\.\]|…)$/i;
+    const isGatedSource =
+      existingCombined.length < DEEP_RECOVERY_THRESHOLD_CHARS &&
+      GATED_SENTINELS.test(existingRaw.trim());
 
     // TIER 1: RSS text is fully sufficient (>= 800 chars / ~130+ words) → skip remote fetch
     if (existingCombined.length >= DEEP_RECOVERY_THRESHOLD_CHARS) {
@@ -166,7 +184,9 @@ export class SourceContentAcquisitionService {
     // TIER 2: RSS text is short (120–799 chars) → attempt bounded enrichment fetch
     // Goal: recover full article text to improve NVIDIA extraction quality and reduce inference time.
     // If recovery fails/times out, fall back safely to existing RSS text.
+    // If item is a gated source AND recovery fails → return 'blocked' for immediate dead-letter.
     if (existingCombined.length >= 120) {
+
       const targetUrl = item.canonicalUrl || item.sourceUrl;
 
       // Security: validate URL before any fetch attempt
@@ -201,10 +221,12 @@ export class SourceContentAcquisitionService {
         item,
         targetUrl,
         existingCombined,
-        startTime
+        startTime,
+        isGatedSource
       );
       this.fetchCache.set(cacheKey, enrichPromise);
       return enrichPromise;
+
     }
 
     // TIER 3: RSS text is very short (< 120 chars) → Deep Source Recovery (existing behavior)
@@ -237,14 +259,21 @@ export class SourceContentAcquisitionService {
    * than the existing RSS snippet, the enriched content is returned. Otherwise the
    * existing RSS text is returned as a safe fallback.
    *
+   * @param isGatedSource - When true (RSS ends with "Read more" etc.), failed recovery returns
+   *   fetchStatus='blocked' so ExtractionEngine can dead-letter in 1 attempt without a NVIDIA call.
+   *   When false, failed recovery returns fetchStatus='sufficient_metadata' (safe fallback).
+   *
    * This path never discards existing sufficient content — it only enriches.
    */
   private async performBoundedEnrichmentFetch(
     item: DiscoveryItem,
     targetUrl: string,
     existingText: string,
-    startTime: number
+    startTime: number,
+    isGatedSource: boolean = false
   ): Promise<AcquiredSourceContent> {
+    const failStatus = isGatedSource ? 'blocked' : 'sufficient_metadata';
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.sourceRecoveryTimeoutMs);
 
@@ -265,7 +294,7 @@ export class SourceContentAcquisitionService {
       const recoveryDurationMs = Date.now() - startTime;
 
       if (!response.ok) {
-        // Recovery blocked or unavailable → safe fallback to existing RSS text
+        // Recovery blocked or unavailable → fallback (blocked if gated, sufficient_metadata otherwise)
         const wordCount = existingText.split(/\s+/).filter(Boolean).length;
         return {
           url: item.sourceUrl,
@@ -278,16 +307,16 @@ export class SourceContentAcquisitionService {
           articleText: existingText,
           wordCount,
           isTruncated: false,
-          fetchStatus: 'sufficient_metadata',
+          fetchStatus: failStatus,
           statusCode: response.status,
           durationMs: recoveryDurationMs,
-          error: `SOURCE_RECOVERY_FAILED: HTTP ${response.status} — using existing RSS text`,
+          error: `SOURCE_RECOVERY_FAILED: HTTP ${response.status}${isGatedSource ? ' (gated source — content_gated)' : ' — using existing RSS text'}`,
         };
       }
 
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('text/html') && !contentType.includes('xml')) {
-        // Unsupported content type → safe fallback
+        // Unsupported content type → fallback
         const wordCount = existingText.split(/\s+/).filter(Boolean).length;
         return {
           url: item.sourceUrl,
@@ -300,16 +329,16 @@ export class SourceContentAcquisitionService {
           articleText: existingText,
           wordCount,
           isTruncated: false,
-          fetchStatus: 'sufficient_metadata',
+          fetchStatus: failStatus,
           statusCode: response.status,
           durationMs: recoveryDurationMs,
-          error: `SOURCE_RECOVERY_FAILED: Unsupported Content-Type ${contentType} — using existing RSS text`,
+          error: `SOURCE_RECOVERY_FAILED: Unsupported Content-Type ${contentType}${isGatedSource ? ' (gated source)' : ' — using existing RSS text'}`,
         };
       }
 
       const rawHtml = await response.text();
       if (rawHtml.length > this.maxSizeBytes) {
-        // Oversized response → safe fallback
+        // Oversized response → fallback
         const wordCount = existingText.split(/\s+/).filter(Boolean).length;
         return {
           url: item.sourceUrl,
@@ -322,10 +351,10 @@ export class SourceContentAcquisitionService {
           articleText: existingText,
           wordCount,
           isTruncated: false,
-          fetchStatus: 'sufficient_metadata',
+          fetchStatus: failStatus,
           statusCode: response.status,
           durationMs: recoveryDurationMs,
-          error: `SOURCE_RECOVERY_FAILED: Response too large (${rawHtml.length} bytes) — using existing RSS text`,
+          error: `SOURCE_RECOVERY_FAILED: Response too large (${rawHtml.length} bytes)${isGatedSource ? ' (gated source)' : ' — using existing RSS text'}`,
         };
       }
 
@@ -340,7 +369,7 @@ export class SourceContentAcquisitionService {
         );
 
       if (isUnusable) {
-        // Anti-bot / CAPTCHA / empty → safe fallback to existing RSS text
+        // Anti-bot / CAPTCHA / empty → fallback
         const wordCount = existingText.split(/\s+/).filter(Boolean).length;
         return {
           url: item.sourceUrl,
@@ -353,10 +382,10 @@ export class SourceContentAcquisitionService {
           articleText: existingText,
           wordCount,
           isTruncated: false,
-          fetchStatus: 'sufficient_metadata',
+          fetchStatus: failStatus,
           statusCode: response.status,
           durationMs: recoveryDurationMs,
-          error: 'SOURCE_RECOVERY_FAILED: UNRELATED_OR_EMPTY_HTML — using existing RSS text',
+          error: `SOURCE_RECOVERY_FAILED: UNRELATED_OR_EMPTY_HTML${isGatedSource ? ' (gated source — CAPTCHA or JS gate)' : ' — using existing RSS text'}`,
         };
       }
 
@@ -380,10 +409,13 @@ export class SourceContentAcquisitionService {
           articleText: existingText,
           wordCount,
           isTruncated: false,
-          fetchStatus: 'sufficient_metadata',
+          // If gated and recovered text is not richer, treat as blocked — the source is confirmed gated
+          fetchStatus: isGatedSource ? 'blocked' : 'sufficient_metadata',
           statusCode: response.status,
           durationMs: recoveryDurationMs,
-          error: 'SOURCE_RECOVERY_SKIPPED: Recovered text not richer than RSS — using RSS text',
+          error: isGatedSource
+            ? 'SOURCE_RECOVERY_FAILED: Recovered text not richer (gated source — confirmed truncated feed)'
+            : 'SOURCE_RECOVERY_SKIPPED: Recovered text not richer than RSS — using RSS text',
         };
       }
 
@@ -411,7 +443,7 @@ export class SourceContentAcquisitionService {
       const recoveryDurationMs = Date.now() - startTime;
       const isTimeout = err.name === 'AbortError' || err.message?.includes('aborted');
 
-      // Recovery timed out or network failure → safe fallback to existing RSS text
+      // Recovery timed out or network failure → fallback
       const wordCount = existingText.split(/\s+/).filter(Boolean).length;
       return {
         url: item.sourceUrl,
@@ -424,15 +456,16 @@ export class SourceContentAcquisitionService {
         articleText: existingText,
         wordCount,
         isTruncated: false,
-        fetchStatus: 'sufficient_metadata',
+        fetchStatus: isGatedSource ? 'blocked' : 'sufficient_metadata',
         statusCode: isTimeout ? 408 : undefined,
         durationMs: recoveryDurationMs,
         error: isTimeout
-          ? `SOURCE_RECOVERY_TIMEOUT: Bounded fetch timed out after ${this.sourceRecoveryTimeoutMs}ms — using existing RSS text`
-          : `SOURCE_RECOVERY_FAILED: ${err.message || 'Network error'} — using existing RSS text`,
+          ? `SOURCE_RECOVERY_TIMEOUT: Bounded fetch timed out after ${this.sourceRecoveryTimeoutMs}ms${isGatedSource ? ' (gated source)' : ' — using existing RSS text'}`
+          : `SOURCE_RECOVERY_FAILED: ${err.message || 'Network error'}${isGatedSource ? ' (gated source)' : ' — using existing RSS text'}`,
       };
     }
   }
+
 
 
   private async performDeepFetch(
