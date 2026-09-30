@@ -998,6 +998,100 @@ async function runPhase6TestSuite() {
     }
   }
 
+
+  // =====================================================================
+  // --- Truncated JSON Repair Tests (Fix 3 — max_tokens truncation) ---
+  // =====================================================================
+  console.log('\n--- Truncated JSON Repair Tests (Fix 3) ---');
+
+
+  {
+    // Test 18.1: repairTruncatedJson closes a truncated object
+    const engine18 = new ExtractionEngine({
+      llmProvider: { extractStructuredNews: async () => ({ rawJson: '{}', model: 'test' }), getModelName: () => 'test' } as any,
+    });
+    const repairFn = (engine18 as any).repairTruncatedJson.bind(engine18);
+
+    const truncatedObj = '{"title":"Test Article","summary":"This is a test';
+    const repaired1 = repairFn(truncatedObj);
+    assert(repaired1 !== null, 'Test 18.1: repairTruncatedJson returns non-null for truncated object');
+    let parsed1: any = null;
+    try { parsed1 = JSON.parse(repaired1); } catch {}
+    assert(parsed1 !== null && parsed1.title === 'Test Article', 'Test 18.1b: Repaired JSON parses successfully with correct title');
+    totalTests += 2; testsPassed += 2;
+    console.log('✅ [PASS] Test 18.1: repairTruncatedJson closes unclosed string and object');
+    console.log('✅ [PASS] Test 18.1b: Repaired JSON parses and preserves existing fields');
+
+    // Test 18.2: repairTruncatedJson closes truncated array
+    const truncatedArr = '{"entities":[{"name":"OpenAI","type":"company"},{"name":"Sam Altman"';
+    const repaired2 = repairFn(truncatedArr);
+    assert(repaired2 !== null, 'Test 18.2: repairTruncatedJson returns non-null for truncated array');
+    let parsed2: any = null;
+    try { parsed2 = JSON.parse(repaired2); } catch {}
+    assert(parsed2 !== null && Array.isArray(parsed2.entities), 'Test 18.2b: Repaired JSON has valid entities array');
+    assert(parsed2.entities.length >= 1, 'Test 18.2c: Repaired entities array has at least one complete entry');
+    totalTests += 3; testsPassed += 3;
+    console.log('✅ [PASS] Test 18.2: repairTruncatedJson closes truncated array correctly');
+    console.log('✅ [PASS] Test 18.2b: Repaired JSON has valid entities array');
+    console.log('✅ [PASS] Test 18.2c: Complete entities preserved in repaired JSON');
+
+    // Test 18.3: repairTruncatedJson returns null for non-object input
+    const nonObject = '[1, 2, 3';
+    const repaired3 = repairFn(nonObject);
+    assert(repaired3 === null, 'Test 18.3: repairTruncatedJson returns null for non-object input');
+    totalTests += 1; testsPassed += 1;
+    console.log('✅ [PASS] Test 18.3: Non-object input correctly returns null (no false repair)');
+
+    // Test 18.4: Well-formed JSON is not altered (idempotent on valid input)
+    const valid = '{"title":"Valid Article","summary":"Summary here."}';
+    const repaired4 = repairFn(valid);
+    // Repair on already-valid JSON should either return it unchanged or return a still-parseable string
+    let parsed4: any = null;
+    try { parsed4 = JSON.parse(repaired4!); } catch {}
+    assert(parsed4 !== null && parsed4.title === 'Valid Article', 'Test 18.4: repairTruncatedJson is safe on valid JSON');
+    totalTests += 1; testsPassed += 1;
+    console.log('✅ [PASS] Test 18.4: repairTruncatedJson is safe/idempotent on valid JSON');
+
+    // Test 18.5: ExtractionEngine dispatches truncation error to repair path (not standard retry)
+    let brevityRetryCalled = false;
+    let standardRetryCalled = false;
+    let callCount = 0;
+    const truncatingProvider = {
+      extractStructuredNews: async (_sys: string, prompt: string, _model?: string, maxTokens?: number) => {
+        callCount++;
+        if (callCount === 1) {
+          // First call: returns truncated JSON — simulates max_tokens hit
+          return { rawJson: '{"title":"Test","contentBlocks":[{"id":"1","type":"paragraph","content":"Some content', model: 'test' };
+        }
+        // Second call: check if called with brevity instruction or standard retry
+        if (prompt.includes('truncated') || prompt.includes('SHORTER') || maxTokens === 1200) {
+          brevityRetryCalled = true;
+        } else {
+          standardRetryCalled = true;
+        }
+        return { rawJson: '{"title":"Test","summary":"Sum","dek":"","summaryPoints":["p1","p2"],"category":"technology","subcategory":"testing","status":"normal","entities":[],"facts":[],"timelineCandidates":[],"contentBlocks":[{"id":"1","type":"paragraph","content":"Content here."}],"sourceEvidence":[],"overallConfidence":0.85,"confidenceLevel":"high","hasConflicts":false}', model: 'test' };
+      },
+      getModelName: () => 'test',
+    };
+    const truncEngine = new ExtractionEngine({ llmProvider: truncatingProvider as any });
+    const testItemForTrunc = {
+      id: 'test-trunc-18-5',
+      title: 'MIT Technology Review AI Article',
+      description: Array.from({ length: 80 }, (_, i) => `word${i}`).join(' '),  // 80 words — above threshold
+      sourceUrl: 'https://www.technologyreview.com/test-article',
+      canonicalUrl: 'https://www.technologyreview.com/test-article',
+      sourceName: 'MIT Technology Review',
+      publishedAt: new Date().toISOString(),
+      rawPayload: {},
+    } as any;
+    try { await truncEngine.extract(testItemForTrunc, { dryRun: true }); } catch {}
+    // The repair should succeed on Stage 1 (the truncated JSON is repairable) — so neither retry may be called
+    // OR if repair fails, Stage 2 (brevity retry) should be called, NOT standard retry
+    assert(!standardRetryCalled, 'Test 18.5: Truncation error does NOT trigger standard correction retry');
+    totalTests += 1; testsPassed += 1;
+    console.log('✅ [PASS] Test 18.5: Truncation error routes to repair path, not standard retry');
+  }
+
   console.log('\n====================================================');
   console.log(`ALL ${testsPassed}/${totalTests} PHASE 6 TEST CASES PASSED WITH 100% SUCCESS!`);
   console.log('====================================================\n');

@@ -2808,14 +2808,38 @@ var ExtractionEngine = class {
       try {
         parsedObj = JSON.parse(rawJson);
       } catch (parseErr) {
-        const retryCorrection = await this.llmProvider.extractStructuredNews(
-          systemPrompt,
-          `The previous response was malformed JSON: ${parseErr.message}. Output ONLY valid JSON matching the schema for the following source:
+        const isTruncated = parseErr.message?.includes("Unexpected end") || parseErr.message?.includes("Unterminated") || parseErr.message?.includes("end of JSON");
+        if (isTruncated) {
+          const repaired = this.repairTruncatedJson(rawJson);
+          let repairSucceeded = false;
+          if (repaired) {
+            try {
+              parsedObj = JSON.parse(repaired);
+              repairSucceeded = true;
+            } catch {
+            }
+          }
+          if (!repairSucceeded) {
+            const brevityRetry = await this.llmProvider.extractStructuredNews(
+              systemPrompt,
+              `Your previous response was truncated mid-JSON (hit token limit). Produce a SHORTER but COMPLETE and valid JSON response. Keep contentBlocks to 4-6 paragraphs maximum. Keep summary under 3 sentences. Ensure all arrays and objects are properly closed. Source:
 
 ${userPrompt}`,
-          options.model
-        );
-        parsedObj = JSON.parse(retryCorrection.rawJson);
+              options.model,
+              1200
+            );
+            parsedObj = JSON.parse(brevityRetry.rawJson);
+          }
+        } else {
+          const retryCorrection = await this.llmProvider.extractStructuredNews(
+            systemPrompt,
+            `The previous response was malformed JSON: ${parseErr.message}. Output ONLY valid JSON matching the schema for the following source:
+
+${userPrompt}`,
+            options.model
+          );
+          parsedObj = JSON.parse(retryCorrection.rawJson);
+        }
       }
       if (parsedObj && typeof parsedObj === "object") {
         if (typeof parsedObj.category === "string") {
@@ -3084,6 +3108,74 @@ ${userPrompt}`,
       updatedAt: r.updated_at
     };
   }
+  /**
+   * Attempts to structurally repair a JSON string truncated mid-output (e.g. by max_tokens).
+   * Closes unclosed strings, arrays, and objects in order so JSON.parse() can succeed.
+   * Returns null if the input cannot be repaired (e.g. doesn't start with '{').
+   *
+   * This is a best-effort repair — it may produce semantically incomplete but structurally
+   * valid JSON. The schema validation step downstream will catch any missing required fields.
+   */
+  repairTruncatedJson(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith("{")) return null;
+    try {
+      const stack = [];
+      let inString = false;
+      let escaped = false;
+      for (let i = 0; i < trimmed.length; i++) {
+        const ch = trimmed[i];
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\" && inString) {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          if (inString) {
+            stack.pop();
+            inString = false;
+          } else {
+            stack.push('"');
+            inString = true;
+          }
+          continue;
+        }
+        if (inString) continue;
+        if (ch === "{") {
+          stack.push("{");
+          continue;
+        }
+        if (ch === "[") {
+          stack.push("[");
+          continue;
+        }
+        if (ch === "}") {
+          stack.pop();
+          continue;
+        }
+        if (ch === "]") {
+          stack.pop();
+          continue;
+        }
+      }
+      let repaired = trimmed;
+      if (inString) {
+        repaired += '"';
+        stack.pop();
+      }
+      for (let i = stack.length - 1; i >= 0; i--) {
+        const open = stack[i];
+        if (open === "{") repaired += "}";
+        else if (open === "[") repaired += "]";
+      }
+      return repaired;
+    } catch {
+      return null;
+    }
+  }
 };
 
 // src/services/extraction/NvidiaClient.ts
@@ -3140,13 +3232,14 @@ var NvidiaClient = class {
   /**
    * Send extraction prompt to NVIDIA LLM and return raw JSON output with metrics.
    */
-  async extractStructuredNews(systemPrompt, userPrompt, modelOverride) {
+  async extractStructuredNews(systemPrompt, userPrompt, modelOverride, maxTokensOverride) {
     if (!this.isConfigured()) {
       throw new Error(
         "[NvidiaClient] NVIDIA_API_KEY environment variable is missing or empty. Set NVIDIA_API_KEY in .env.local for server-side extraction."
       );
     }
     const targetModel = modelOverride || this.model;
+    const effectiveMaxTokens = maxTokensOverride ?? this.maxTokens;
     const startTime = Date.now();
     let lastError = null;
     const maxRetries = 2;
@@ -3169,7 +3262,7 @@ var NvidiaClient = class {
               { role: "user", content: userPrompt }
             ],
             temperature: this.temperature,
-            max_tokens: this.maxTokens
+            max_tokens: effectiveMaxTokens
           }),
           signal: controller.signal
         });

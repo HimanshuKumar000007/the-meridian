@@ -40,13 +40,19 @@ export interface NvidiaChatCompletionResponse {
 }
 
 export interface ExtractionLLMProvider {
-  extractStructuredNews(systemPrompt: string, userPrompt: string, modelOverride?: string): Promise<{
+  extractStructuredNews(
+    systemPrompt: string,
+    userPrompt: string,
+    modelOverride?: string,
+    maxTokensOverride?: number
+  ): Promise<{
     rawJson: string;
     model: string;
     durationMs: number;
     tokensUsed?: number;
   }>;
 }
+
 
 const DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 const DEFAULT_MODEL = 'openai/gpt-oss-20b';
@@ -132,7 +138,8 @@ export class NvidiaClient implements ExtractionLLMProvider {
   public async extractStructuredNews(
     systemPrompt: string,
     userPrompt: string,
-    modelOverride?: string
+    modelOverride?: string,
+    maxTokensOverride?: number
   ): Promise<{
     rawJson: string;
     model: string;
@@ -147,6 +154,7 @@ export class NvidiaClient implements ExtractionLLMProvider {
     }
 
     const targetModel = modelOverride || this.model;
+    const effectiveMaxTokens = maxTokensOverride ?? this.maxTokens;
     const startTime = Date.now();
     let lastError: Error | null = null;
     const maxRetries = 2;
@@ -171,8 +179,9 @@ export class NvidiaClient implements ExtractionLLMProvider {
               { role: 'user', content: userPrompt },
             ],
             temperature: this.temperature,
-            max_tokens: this.maxTokens,
+            max_tokens: effectiveMaxTokens,
           }),
+
           signal: controller.signal,
         });
 

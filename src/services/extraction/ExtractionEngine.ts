@@ -130,6 +130,7 @@ export class ExtractionEngine {
       throw new Error(errorMsg);
     }
 
+
     // 2. Idempotency Check: Check if already extracted
     if (!options.forceRerun && this.repository) {
       const existing = await this.repository.findExtraction(item.id, inputHash, promptVersion);
@@ -169,19 +170,55 @@ export class ExtractionEngine {
       rawJson = llmResult.rawJson;
       usedModel = llmResult.model;
 
-      // Parse JSON
+      // Parse JSON — with truncation-aware recovery
       let parsedObj: any;
       try {
         parsedObj = JSON.parse(rawJson);
       } catch (parseErr: any) {
-        // Attempt correction retry
-        const retryCorrection = await this.llmProvider.extractStructuredNews(
-          systemPrompt,
-          `The previous response was malformed JSON: ${parseErr.message}. Output ONLY valid JSON matching the schema for the following source:\n\n${userPrompt}`,
-          options.model
-        );
-        parsedObj = JSON.parse(retryCorrection.rawJson);
+        const isTruncated = parseErr.message?.includes('Unexpected end') ||
+          parseErr.message?.includes('Unterminated') ||
+          parseErr.message?.includes('end of JSON');
+
+        if (isTruncated) {
+          // Stage 1: Structural repair — close unclosed brackets/braces/strings.
+          // Handles the common case where max_tokens cut the response mid-object.
+          const repaired = this.repairTruncatedJson(rawJson);
+          let repairSucceeded = false;
+          if (repaired) {
+            try {
+              parsedObj = JSON.parse(repaired);
+              repairSucceeded = true;
+            } catch {
+              // Structural repair also failed — proceed to Stage 2
+            }
+          }
+
+          if (!repairSucceeded) {
+            // Stage 2: Retry with reduced max_tokens + brevity instruction.
+            // A second full-size request would also be truncated — ask for shorter output.
+            const brevityRetry = await this.llmProvider.extractStructuredNews(
+              systemPrompt,
+              `Your previous response was truncated mid-JSON (hit token limit). ` +
+              `Produce a SHORTER but COMPLETE and valid JSON response. ` +
+              `Keep contentBlocks to 4-6 paragraphs maximum. Keep summary under 3 sentences. ` +
+              `Ensure all arrays and objects are properly closed. ` +
+              `Source:\n\n${userPrompt}`,
+              options.model,
+              1200
+            );
+            parsedObj = JSON.parse(brevityRetry.rawJson);
+          }
+        } else {
+          // Non-truncation parse error — standard correction retry
+          const retryCorrection = await this.llmProvider.extractStructuredNews(
+            systemPrompt,
+            `The previous response was malformed JSON: ${parseErr.message}. Output ONLY valid JSON matching the schema for the following source:\n\n${userPrompt}`,
+            options.model
+          );
+          parsedObj = JSON.parse(retryCorrection.rawJson);
+        }
       }
+
 
       // Normalize enum fields before schema validation (case-insensitivity, whitespace)
       if (parsedObj && typeof parsedObj === 'object') {
@@ -512,5 +549,76 @@ export class ExtractionEngine {
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     };
+  }
+
+  /**
+   * Attempts to structurally repair a JSON string truncated mid-output (e.g. by max_tokens).
+   * Closes unclosed strings, arrays, and objects in order so JSON.parse() can succeed.
+   * Returns null if the input cannot be repaired (e.g. doesn't start with '{').
+   *
+   * This is a best-effort repair — it may produce semantically incomplete but structurally
+   * valid JSON. The schema validation step downstream will catch any missing required fields.
+   */
+  private repairTruncatedJson(raw: string): string | null {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('{')) return null;
+
+    try {
+      // Track nesting stack to know what needs closing
+      const stack: Array<'{' | '[' | '"'> = [];
+      let inString = false;
+      let escaped = false;
+
+      for (let i = 0; i < trimmed.length; i++) {
+        const ch = trimmed[i];
+
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === '\\' && inString) {
+          escaped = true;
+          continue;
+        }
+        if (ch === '"') {
+          if (inString) {
+            // Close the string
+            stack.pop();
+            inString = false;
+          } else {
+            stack.push('"');
+            inString = true;
+          }
+          continue;
+        }
+        if (inString) continue; // ignore everything inside a string
+
+        if (ch === '{') { stack.push('{'); continue; }
+        if (ch === '[') { stack.push('['); continue; }
+        if (ch === '}') { stack.pop(); continue; }
+        if (ch === ']') { stack.pop(); continue; }
+      }
+
+      // Build the closing sequence from the stack (innermost first)
+      let repaired = trimmed;
+
+      // If we're mid-string, close it with a safe sentinel value
+      if (inString) {
+        repaired += '"';
+        stack.pop(); // remove the open string marker
+      }
+
+      // Close remaining open structures
+      for (let i = stack.length - 1; i >= 0; i--) {
+        const open = stack[i];
+        if (open === '{') repaired += '}';
+        else if (open === '[') repaired += ']';
+        // open string markers should have been handled above
+      }
+
+      return repaired;
+    } catch {
+      return null;
+    }
   }
 }
