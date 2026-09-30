@@ -192,7 +192,7 @@ export class PublicationGateService {
     }
 
     // Check for substantive block
-    const hasSubstantiveBlock = story.content.some((b) => {
+    const hasSubstantiveBlock = story.content.some((b: any) => {
       const pText = b.text || b.content || '';
       if (b.type === 'paragraph' && typeof pText === 'string' && pText.trim().length >= 40) return true;
       const qText = b.quote || b.text || b.content || '';

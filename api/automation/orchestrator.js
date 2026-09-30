@@ -292,7 +292,7 @@ var PipelineOrchestrator = class {
         const schedule = scheduleMap.get(stage);
         const stageLimit = options.limitOverride || (schedule?.maxBatchSize ? schedule.maxBatchSize : config2.maxBatch[stage]);
         const elapsedSinceStart = Date.now() - startTime;
-        const SERVERLESS_EXECUTION_BUDGET_MS = 45e3;
+        const SERVERLESS_EXECUTION_BUDGET_MS = 48e3;
         if (elapsedSinceStart >= SERVERLESS_EXECUTION_BUDGET_MS) {
           stageResults[stage] = {
             stage,
@@ -2778,7 +2778,7 @@ ${userPrompt}`,
 // src/services/extraction/NvidiaClient.ts
 var DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 var DEFAULT_MODEL = "meta/llama-3.2-11b-vision-instruct";
-var DEFAULT_TIMEOUT_MS3 = 25e3;
+var DEFAULT_TIMEOUT_MS3 = 33e3;
 var DEFAULT_TEMPERATURE = 0.1;
 var DEFAULT_MAX_TOKENS = 2500;
 var NvidiaClient = class {
@@ -8409,7 +8409,7 @@ var StageRunnerService = class {
       let skipped = 0;
       const errors = [];
       for (const item of pendingItems) {
-        if (Date.now() - started > 28e3 && (succeeded > 0 || failed > 0)) {
+        if (Date.now() - started > 34e3 && (succeeded > 0 || failed > 0)) {
           break;
         }
         try {

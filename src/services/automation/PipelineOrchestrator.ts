@@ -196,9 +196,9 @@ export class PipelineOrchestrator {
         const schedule = scheduleMap.get(stage);
         const stageLimit = options.limitOverride || (schedule?.maxBatchSize ? schedule.maxBatchSize : config.maxBatch[stage]);
 
-        // Check overall serverless execution budget (45 seconds max from orchestrator start)
+        // Check overall serverless execution budget (48 seconds max from orchestrator start)
         const elapsedSinceStart = Date.now() - startTime;
-        const SERVERLESS_EXECUTION_BUDGET_MS = 45000;
+        const SERVERLESS_EXECUTION_BUDGET_MS = 48000;
         if (elapsedSinceStart >= SERVERLESS_EXECUTION_BUDGET_MS) {
           stageResults[stage] = {
             stage,
