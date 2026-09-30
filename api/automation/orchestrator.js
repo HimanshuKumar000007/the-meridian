@@ -1972,10 +1972,13 @@ var DEFAULT_TIMEOUT_MS2 = 8e3;
 var DEFAULT_MAX_SIZE_BYTES2 = 2.5 * 1024 * 1024;
 var DEFAULT_MAX_CHARACTERS = 15e3;
 var DEFAULT_USER_AGENT2 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+var DEEP_RECOVERY_THRESHOLD_CHARS = 800;
+var DEFAULT_SOURCE_RECOVERY_TIMEOUT_MS = 8e3;
 var SourceContentAcquisitionService = class {
   constructor(options = {}) {
     this.fetchCache = /* @__PURE__ */ new Map();
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS2;
+    this.sourceRecoveryTimeoutMs = options.sourceRecoveryTimeoutMs ?? DEFAULT_SOURCE_RECOVERY_TIMEOUT_MS;
     this.maxSizeBytes = options.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES2;
     this.maxCharacters = options.maxCharacters ?? DEFAULT_MAX_CHARACTERS;
     this.userAgent = options.userAgent ?? DEFAULT_USER_AGENT2;
@@ -2018,16 +2021,27 @@ var SourceContentAcquisitionService = class {
    * Acquire clean content for a given discovery candidate.
    * Flow:
    * 1. Check existing source text length:
-   *    If >= 120 chars -> return existing metadata immediately (no extra fetch).
-   * 2. If < 120 chars -> attempt deep fetch of original article.
-   *    If deep fetch succeeds and yields substantive text (>= 120 chars) -> enrich.
-   *    If deep fetch fails, times out, or is blocked -> retain safe fallback metadata (< 120 chars).
+   *    If >= DEEP_RECOVERY_THRESHOLD_CHARS (800) → return existing metadata immediately.
+   *       These items carry enough context for full NVIDIA extraction without a network round-trip.
+   *    If >= 120 but < DEEP_RECOVERY_THRESHOLD_CHARS → attempt bounded source recovery with
+   *       sourceRecoveryTimeoutMs budget. If recovery yields richer text → use it.
+   *       If recovery is too slow, blocked, or fails → fall back to existing RSS text safely.
+   *       This prevents short-snippet items from causing NVIDIA timeout while preserving quality.
+   *    If < 120 chars → Deep Source Recovery (existing behavior).
+   *       If deep fetch succeeds and yields substantive text (>= 120 chars) → enrich.
+   *       If deep fetch fails, times out, or is blocked → retain safe fallback metadata (< 120 chars).
+   *
+   * SAFETY INVARIANTS:
+   * - Never bypasses robots.txt, CAPTCHA, authentication, or paywalls
+   * - Never invents or replaces content
+   * - All recovery attempts have hard timeouts via AbortController
+   * - Source recovery timeout is bounded to leave adequate budget for NVIDIA extraction
    */
   async acquireContent(item) {
     const startTime = Date.now();
     const existingRaw = (item.description || item.rawPayload?.content || "").trim();
     const existingCombined = [item.title, existingRaw].filter(Boolean).join("\n\n").trim();
-    if (existingCombined.length >= 120) {
+    if (existingCombined.length >= DEEP_RECOVERY_THRESHOLD_CHARS) {
       const wordCount = existingCombined.split(/\s+/).filter(Boolean).length;
       return {
         url: item.sourceUrl,
@@ -2045,6 +2059,40 @@ var SourceContentAcquisitionService = class {
         durationMs: 0
       };
     }
+    if (existingCombined.length >= 120) {
+      const targetUrl2 = item.canonicalUrl || item.sourceUrl;
+      if (!this.isSafeUrl(targetUrl2)) {
+        const wordCount = existingCombined.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: item.canonicalUrl || item.sourceUrl,
+          title: item.title,
+          description: item.description || "",
+          author: item.author || null,
+          heroImage: item.imageUrl || null,
+          publishedDate: item.publishedAt || null,
+          articleText: existingCombined,
+          wordCount,
+          isTruncated: false,
+          fetchStatus: "sufficient_metadata",
+          statusCode: 200,
+          durationMs: 0,
+          error: "SOURCE_RECOVERY_SKIPPED: URL_BLOCKED_UNSAFE \u2014 falling back to RSS text"
+        };
+      }
+      const cacheKey = `enrich:${targetUrl2}`;
+      if (this.fetchCache.has(cacheKey)) {
+        return this.fetchCache.get(cacheKey);
+      }
+      const enrichPromise = this.performBoundedEnrichmentFetch(
+        item,
+        targetUrl2,
+        existingCombined,
+        startTime
+      );
+      this.fetchCache.set(cacheKey, enrichPromise);
+      return enrichPromise;
+    }
     const targetUrl = item.canonicalUrl || item.sourceUrl;
     if (!this.isSafeUrl(targetUrl)) {
       return this.buildFallbackContent(
@@ -2061,6 +2109,179 @@ var SourceContentAcquisitionService = class {
     const fetchPromise = this.performDeepFetch(item, targetUrl, startTime);
     this.fetchCache.set(targetUrl, fetchPromise);
     return fetchPromise;
+  }
+  /**
+   * Bounded enrichment fetch for Tier 2 items (120–799 chars of RSS text).
+   * Uses sourceRecoveryTimeoutMs to cap the fetch. If successful and yields more text
+   * than the existing RSS snippet, the enriched content is returned. Otherwise the
+   * existing RSS text is returned as a safe fallback.
+   *
+   * This path never discards existing sufficient content — it only enriches.
+   */
+  async performBoundedEnrichmentFetch(item, targetUrl, existingText, startTime) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.sourceRecoveryTimeoutMs);
+    try {
+      const response = await fetch(targetUrl, {
+        method: "GET",
+        headers: {
+          "User-Agent": this.userAgent,
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Sec-Fetch-Mode": "navigate"
+        },
+        signal: controller.signal,
+        redirect: "follow"
+      });
+      clearTimeout(timeoutId);
+      const recoveryDurationMs = Date.now() - startTime;
+      if (!response.ok) {
+        const wordCount2 = existingText.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: item.canonicalUrl || item.sourceUrl,
+          title: item.title,
+          description: item.description || "",
+          author: item.author || null,
+          heroImage: item.imageUrl || null,
+          publishedDate: item.publishedAt || null,
+          articleText: existingText,
+          wordCount: wordCount2,
+          isTruncated: false,
+          fetchStatus: "sufficient_metadata",
+          statusCode: response.status,
+          durationMs: recoveryDurationMs,
+          error: `SOURCE_RECOVERY_FAILED: HTTP ${response.status} \u2014 using existing RSS text`
+        };
+      }
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("text/html") && !contentType.includes("xml")) {
+        const wordCount2 = existingText.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: item.canonicalUrl || item.sourceUrl,
+          title: item.title,
+          description: item.description || "",
+          author: item.author || null,
+          heroImage: item.imageUrl || null,
+          publishedDate: item.publishedAt || null,
+          articleText: existingText,
+          wordCount: wordCount2,
+          isTruncated: false,
+          fetchStatus: "sufficient_metadata",
+          statusCode: response.status,
+          durationMs: recoveryDurationMs,
+          error: `SOURCE_RECOVERY_FAILED: Unsupported Content-Type ${contentType} \u2014 using existing RSS text`
+        };
+      }
+      const rawHtml = await response.text();
+      if (rawHtml.length > this.maxSizeBytes) {
+        const wordCount2 = existingText.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: item.canonicalUrl || item.sourceUrl,
+          title: item.title,
+          description: item.description || "",
+          author: item.author || null,
+          heroImage: item.imageUrl || null,
+          publishedDate: item.publishedAt || null,
+          articleText: existingText,
+          wordCount: wordCount2,
+          isTruncated: false,
+          fetchStatus: "sufficient_metadata",
+          statusCode: response.status,
+          durationMs: recoveryDurationMs,
+          error: `SOURCE_RECOVERY_FAILED: Response too large (${rawHtml.length} bytes) \u2014 using existing RSS text`
+        };
+      }
+      const extracted = this.extractAndCleanHtml(rawHtml, targetUrl);
+      const isUnusable = !extracted.articleText || extracted.articleText.length < 50 || /access denied|please enable javascript|404 not found|sign in to read|blocked by security|robot check/i.test(
+        extracted.articleText.slice(0, 200)
+      );
+      if (isUnusable) {
+        const wordCount2 = existingText.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: item.canonicalUrl || item.sourceUrl,
+          title: item.title,
+          description: item.description || "",
+          author: item.author || null,
+          heroImage: item.imageUrl || null,
+          publishedDate: item.publishedAt || null,
+          articleText: existingText,
+          wordCount: wordCount2,
+          isTruncated: false,
+          fetchStatus: "sufficient_metadata",
+          statusCode: response.status,
+          durationMs: recoveryDurationMs,
+          error: "SOURCE_RECOVERY_FAILED: UNRELATED_OR_EMPTY_HTML \u2014 using existing RSS text"
+        };
+      }
+      let fullArticleText = extracted.articleText;
+      if (item.title && !fullArticleText.includes(item.title)) {
+        fullArticleText = `${item.title}
+
+${fullArticleText}`;
+      }
+      if (fullArticleText.length <= existingText.length) {
+        const wordCount2 = existingText.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: extracted.canonicalUrl || targetUrl,
+          title: extracted.title || item.title,
+          description: extracted.description || item.description || "",
+          author: extracted.author || item.author || null,
+          heroImage: extracted.heroImage || item.imageUrl || null,
+          publishedDate: extracted.publishedDate || item.publishedAt || null,
+          articleText: existingText,
+          wordCount: wordCount2,
+          isTruncated: false,
+          fetchStatus: "sufficient_metadata",
+          statusCode: response.status,
+          durationMs: recoveryDurationMs,
+          error: "SOURCE_RECOVERY_SKIPPED: Recovered text not richer than RSS \u2014 using RSS text"
+        };
+      }
+      const isTruncated = fullArticleText.length > this.maxCharacters;
+      const finalArticleText = isTruncated ? fullArticleText.slice(0, this.maxCharacters) : fullArticleText;
+      const wordCount = finalArticleText.split(/\s+/).filter(Boolean).length;
+      return {
+        url: targetUrl,
+        canonicalUrl: extracted.canonicalUrl || targetUrl,
+        title: extracted.title || item.title,
+        description: extracted.description || item.description || "",
+        author: extracted.author || item.author || null,
+        heroImage: extracted.heroImage || item.imageUrl || null,
+        publishedDate: extracted.publishedDate || item.publishedAt || null,
+        articleText: finalArticleText,
+        wordCount,
+        isTruncated,
+        fetchStatus: "deep_fetch_success",
+        statusCode: response.status,
+        durationMs: recoveryDurationMs
+      };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      const recoveryDurationMs = Date.now() - startTime;
+      const isTimeout = err.name === "AbortError" || err.message?.includes("aborted");
+      const wordCount = existingText.split(/\s+/).filter(Boolean).length;
+      return {
+        url: item.sourceUrl,
+        canonicalUrl: item.canonicalUrl || item.sourceUrl,
+        title: item.title,
+        description: item.description || "",
+        author: item.author || null,
+        heroImage: item.imageUrl || null,
+        publishedDate: item.publishedAt || null,
+        articleText: existingText,
+        wordCount,
+        isTruncated: false,
+        fetchStatus: "sufficient_metadata",
+        statusCode: isTimeout ? 408 : void 0,
+        durationMs: recoveryDurationMs,
+        error: isTimeout ? `SOURCE_RECOVERY_TIMEOUT: Bounded fetch timed out after ${this.sourceRecoveryTimeoutMs}ms \u2014 using existing RSS text` : `SOURCE_RECOVERY_FAILED: ${err.message || "Network error"} \u2014 using existing RSS text`
+      };
+    }
   }
   async performDeepFetch(item, targetUrl, startTime) {
     try {

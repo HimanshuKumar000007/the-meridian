@@ -343,7 +343,7 @@ async function runPhase6TestSuite() {
   const originalFetch = globalThis.fetch;
 
   try {
-    // 1. RSS text >= 120 -> no extra fetch required
+    // 1. RSS text >= 800 chars -> immediately sufficient, no extra fetch required
     const longRssItem: DiscoveryItem = {
       id: 'disc-long-01',
       sourceId: 'src-test',
@@ -353,7 +353,10 @@ async function runPhase6TestSuite() {
       sourceUrl: 'https://example.org/sufficient-story',
       title: 'Major Breakthrough in Clean Fusion Energy Announced by International Consortium',
       description:
-        'Scientists at the National Ignition Facility and international partner laboratories have achieved a sustained net energy gain in a magnetic confinement fusion reaction.',
+        'Scientists at the National Ignition Facility and international partner laboratories have achieved a sustained net energy gain in a magnetic confinement fusion reaction for the first time in history. ' +
+        'The experiment, conducted over 48 hours using a novel tritium-deuterium fuel mix, produced 2.1 megajoules of energy while consuming only 1.8 megajoules of laser input, representing a net efficiency of 116 percent. ' +
+        'Lead researcher Dr. Elena Vasquez said the milestone resolves a long-standing physics challenge that had eluded scientists for more than six decades. ' +
+        'The breakthrough is expected to accelerate commercial fusion energy development by at least a decade, with several private-sector partners already in discussions with the consortium about licensing the patented confinement geometry.',
       publishedAt: '2026-09-28T00:00:00Z',
       discoveredAt: '2026-09-28T00:00:00Z',
       lastSeenAt: '2026-09-28T00:00:00Z',
@@ -362,9 +365,10 @@ async function runPhase6TestSuite() {
       status: 'candidate',
     };
     const c1 = await recoveryService.acquireContent(longRssItem);
-    assert(c1.fetchStatus === 'sufficient_metadata', 'Test 13.1: RSS text >= 120 requires no extra fetch');
+    assert(c1.fetchStatus === 'sufficient_metadata', 'Test 13.1: RSS text >= 800 chars requires no extra fetch');
     assert(c1.durationMs === 0, 'Test 13.1b: Returns immediately without network latency');
-    assert(c1.articleText.length >= 120, 'Test 13.1c: Sufficient source text preserved');
+    assert(c1.articleText.length >= 800, 'Test 13.1c: Sufficient source text preserved');
+
 
     // 2. RSS text < 120 + original article available -> fetch original article -> sourceText becomes sufficient
     let fetchCount = 0;
@@ -492,6 +496,215 @@ async function runPhase6TestSuite() {
     });
     assert(Boolean(c8.error?.includes('URL_BLOCKED_UNSAFE')), 'Test 13.8: Private metadata IP blocked by SSRF guard');
     assert(!reachedFetch, 'Test 13.8b: Fetch was NEVER invoked for unsafe URL target');
+
+    // ================================================================
+    // TEST 14: Tier 2 — Bounded Source Recovery (120–799 char RSS text)
+    // ================================================================
+    console.log('\n--- Tier 2 Bounded Source Recovery Tests (8 Scenarios) ---');
+
+    // Medium-length RSS item (between 120 and 800 chars) used as the base item for Tests 14.x
+    const mediumRssItem: DiscoveryItem = {
+      id: 'disc-medium-01',
+      sourceId: 'src-eurogamer',
+      sourceName: 'Eurogamer',
+      sourceType: 'rss',
+      canonicalUrl: 'https://www.eurogamer.net/wardogs-early-access-review',
+      sourceUrl: 'https://www.eurogamer.net/wardogs-early-access-review',
+      title: 'Wardogs early access review',
+      description:
+        'It took me four attempts to successfully parachute into a Wardogs match. On the first try, I opened my parachute far too early. Read more',
+      publishedAt: '2026-09-30T00:00:00Z',
+      discoveredAt: '2026-09-30T00:00:00Z',
+      lastSeenAt: '2026-09-30T00:00:00Z',
+      fingerprint: 'fp-medium-01',
+      contentHash: 'hash-medium-01',
+      status: 'candidate',
+    };
+
+    // 14.1: Fast source recovery → enriched article text returned
+    const tier2Service = new SourceContentAcquisitionService({ sourceRecoveryTimeoutMs: 3000 });
+    globalThis.fetch = (async () => {
+      return new Response(
+        '<!DOCTYPE html><html><body><article>' +
+          '<h1>Wardogs early access review</h1>' +
+          '<p>It took me four attempts to successfully parachute into a Wardogs match. The full review covers mechanics, multiplayer balance, and progression system in detail.</p>' +
+          '<p>The parachute physics engine stands out as a genuinely novel mechanic. Players must account for wind speed, altitude, and enemy positions simultaneously.</p>' +
+          '<p>Wardogs launched on September 28 in early access with a roster of six maps and three game modes. Developer Wildfire Studios confirmed content updates are planned monthly.</p>' +
+          '</article></body></html>',
+        { status: 200, headers: { 'Content-Type': 'text/html' } }
+      );
+    }) as any;
+
+    tier2Service.clearCache();
+    const c14_1 = await tier2Service.acquireContent(mediumRssItem);
+    assert(
+      c14_1.fetchStatus === 'deep_fetch_success',
+      'Test 14.1: Fast source recovery for medium-length RSS item succeeds and enriches content'
+    );
+    assert(
+      c14_1.articleText.length > mediumRssItem.description!.length,
+      'Test 14.1b: Recovered article text is richer than original RSS snippet'
+    );
+    assert(
+      c14_1.articleText.includes('full review covers'),
+      'Test 14.1c: Recovered article body is returned (not just RSS text)'
+    );
+
+    // 14.2: Slow source recovery → aborts at timeout, falls back to RSS text
+    tier2Service.clearCache();
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      // Simulate a slow server by waiting until AbortController fires
+      await new Promise<void>((_resolve, reject) => {
+        const id = setTimeout(() => reject(new Error('test-timeout-not-fired')), 10000);
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(id);
+          const err = new Error('The operation was aborted');
+          (err as any).name = 'AbortError';
+          reject(err);
+        });
+      });
+      return new Response('');
+    }) as any;
+
+    const slowStart = Date.now();
+    const c14_2 = await tier2Service.acquireContent({ ...mediumRssItem, id: 'disc-medium-02' });
+    const slowDuration = Date.now() - slowStart;
+    assert(
+      c14_2.fetchStatus === 'sufficient_metadata',
+      'Test 14.2: Slow source recovery aborts and falls back to existing RSS text'
+    );
+    assert(
+      c14_2.articleText === [mediumRssItem.title, mediumRssItem.description].join('\n\n').trim() ||
+        c14_2.articleText.includes(mediumRssItem.description!.slice(0, 50)),
+      'Test 14.2b: Fallback text is the original RSS content'
+    );
+    assert(
+      Boolean(c14_2.error?.includes('SOURCE_RECOVERY_TIMEOUT')),
+      'Test 14.2c: Timeout is recorded in error field'
+    );
+    assert(slowDuration < 5000, 'Test 14.2d: Recovery timeout did not consume the full orchestrator budget');
+
+    // 14.3: Blocked source (403) → safe fallback, RSS text preserved
+    tier2Service.clearCache();
+    globalThis.fetch = (async () => {
+      return new Response('Forbidden', { status: 403, statusText: 'Forbidden' });
+    }) as any;
+
+    const c14_3 = await tier2Service.acquireContent({ ...mediumRssItem, id: 'disc-medium-03' });
+    assert(
+      c14_3.fetchStatus === 'sufficient_metadata',
+      'Test 14.3: Blocked source (403) safely falls back to RSS text for medium items'
+    );
+    assert(
+      Boolean(c14_3.error?.includes('SOURCE_RECOVERY_FAILED')),
+      'Test 14.3b: Recovery failure recorded in error field without crashing'
+    );
+
+    // 14.4: Insufficient RSS text + failed recovery → HOLD / needs_review path
+    // (< 120 chars existing text + blocked recovery → item stays insufficient, extraction engine will reject)
+    const veryShortItem: DiscoveryItem = {
+      ...mediumRssItem,
+      id: 'disc-short-hold',
+      description: 'Short blurb.',  // < 120 chars total with title
+    };
+    tier2Service.clearCache();
+    globalThis.fetch = (async () => {
+      return new Response('Forbidden', { status: 403, statusText: 'Forbidden' });
+    }) as any;
+
+    const c14_4 = await tier2Service.acquireContent(veryShortItem);
+    assert(
+      c14_4.fetchStatus === 'fallback_metadata' || c14_4.fetchStatus === 'insufficient_input',
+      'Test 14.4: Insufficient RSS text + failed recovery results in fallback/insufficient status for HOLD routing'
+    );
+
+    // 14.5: Sufficient RSS text + failed recovery → extraction continues safely with RSS text
+    tier2Service.clearCache();
+    globalThis.fetch = (async () => {
+      return new Response('Not Found', { status: 404, statusText: 'Not Found' });
+    }) as any;
+
+    const c14_5 = await tier2Service.acquireContent({ ...mediumRssItem, id: 'disc-medium-05' });
+    assert(
+      c14_5.fetchStatus === 'sufficient_metadata',
+      'Test 14.5: Sufficient RSS text preserved when recovery fails — extraction continues unblocked'
+    );
+    assert(
+      c14_5.articleText.length >= 120,
+      'Test 14.5b: Article text remains sufficient for NVIDIA extraction after failed recovery'
+    );
+
+    // 14.6: Source recovery timeout does not consume the entire orchestrator budget
+    // Verify the timeout is capped at sourceRecoveryTimeoutMs (3000ms here), not the 35s NVIDIA budget
+    tier2Service.clearCache();
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      await new Promise<void>((_resolve, reject) => {
+        const id = setTimeout(() => reject(new Error('test-timeout-not-fired')), 30000);
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(id);
+          const err = new Error('The operation was aborted');
+          (err as any).name = 'AbortError';
+          reject(err);
+        });
+      });
+      return new Response('');
+    }) as any;
+
+    const budgetStart = Date.now();
+    const c14_6 = await tier2Service.acquireContent({ ...mediumRssItem, id: 'disc-medium-06' });
+    const budgetDuration = Date.now() - budgetStart;
+    assert(
+      budgetDuration < 5000,
+      `Test 14.6: Source recovery timeout (${budgetDuration}ms) stays within bounded budget — does not block NVIDIA stage`
+    );
+    assert(
+      c14_6.statusCode === 408,
+      'Test 14.6b: HTTP 408 status code recorded for timed-out recovery'
+    );
+
+    // 14.7: Repeated recovery failures follow bounded retry/dead-letter behavior via ExtractionEngine
+    const failingAcquisitionService = new SourceContentAcquisitionService({ sourceRecoveryTimeoutMs: 500 });
+    const deadLetterMockRepo = new MockExtractionRepository();
+    const deadLetterProvider = new MockExtractionProvider({ shouldFail: true, failError: 'LLM unavailable' });
+    const deadLetterEngine = new ExtractionEngine({
+      llmProvider: deadLetterProvider,
+      repository: deadLetterMockRepo,
+      acquisitionService: failingAcquisitionService,
+    });
+
+    let deadLetterErrorCaught = false;
+    try {
+      await deadLetterEngine.extract(
+        { ...mediumRssItem, id: 'disc-dead-letter-test' },
+        { dryRun: false, maxRetries: 2 }
+      );
+    } catch {
+      deadLetterErrorCaught = true;
+    }
+    assert(
+      deadLetterErrorCaught,
+      'Test 14.7: Repeated failures (LLM unavailable) propagate through ExtractionEngine error boundary'
+    );
+
+    // 14.8: No SSRF regression in Tier 2 — unsafe URL is blocked before fetch even for medium items
+    tier2Service.clearCache();
+    let tier2SsrfFetchInvoked = false;
+    globalThis.fetch = (async () => {
+      tier2SsrfFetchInvoked = true;
+      return new Response('ok');
+    }) as any;
+
+    const c14_8 = await tier2Service.acquireContent({
+      ...mediumRssItem,
+      id: 'disc-ssrf-tier2',
+      canonicalUrl: 'http://192.168.1.1/admin',
+    });
+    assert(!tier2SsrfFetchInvoked, 'Test 14.8: SSRF guard blocks fetch for private IP even in Tier 2 enrichment path');
+    assert(
+      c14_8.fetchStatus === 'sufficient_metadata' &&
+        Boolean(c14_8.error?.includes('URL_BLOCKED_UNSAFE')),
+      'Test 14.8b: Unsafe URL in Tier 2 returns existing RSS text with security note — no fabrication'
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

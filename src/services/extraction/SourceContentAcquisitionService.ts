@@ -11,6 +11,8 @@ export interface AcquisitionOptions {
   maxSizeBytes?: number;
   maxCharacters?: number;
   userAgent?: string;
+  /** Timeout for source recovery when RSS text is short (< DEEP_RECOVERY_THRESHOLD_CHARS). Default: 8000ms. */
+  sourceRecoveryTimeoutMs?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -20,12 +22,38 @@ const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 /**
+ * Minimum combined RSS+title character count for "immediately sufficient" source text.
+ * Items below this threshold will attempt bounded source recovery (deep fetch) even if
+ * they exceed the bare minimum of 120 chars.
+ *
+ * Rationale: Items with only 120–799 chars (~20–130 words) give the LLM too little
+ * material to produce a factual 700-word article without fabrication. Source recovery
+ * provides the full article body, reducing NVIDIA inference time and improving quality.
+ *
+ * Items >= 800 chars (roughly 130+ words) skip source recovery as they carry enough
+ * context for a complete extraction without a network round-trip.
+ */
+const DEEP_RECOVERY_THRESHOLD_CHARS = 800;
+
+/**
+ * Default timeout for the bounded source recovery fetch (separate from the main timeout).
+ * Must leave sufficient budget for NVIDIA extraction + downstream stages.
+ * Budget allocation (90s orchestrator):
+ *   - Discovery: ~10s
+ *   - Source recovery: <= 8s  ← this timeout
+ *   - NVIDIA extraction: <= 35s
+ *   - Validation + lifecycle + margin: ~35s
+ */
+const DEFAULT_SOURCE_RECOVERY_TIMEOUT_MS = 8000;
+
+/**
  * Universal Source Content Acquisition & HTML Sanitizer Service.
  * Safely fetches source URLs, strips boilerplate/markup, and extracts clean article text.
  * Implements Deep Source Recovery for short RSS items.
  */
 export class SourceContentAcquisitionService {
   private timeoutMs: number;
+  private sourceRecoveryTimeoutMs: number;
   private maxSizeBytes: number;
   private maxCharacters: number;
   private userAgent: string;
@@ -33,6 +61,7 @@ export class SourceContentAcquisitionService {
 
   constructor(options: AcquisitionOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.sourceRecoveryTimeoutMs = options.sourceRecoveryTimeoutMs ?? DEFAULT_SOURCE_RECOVERY_TIMEOUT_MS;
     this.maxSizeBytes = options.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES;
     this.maxCharacters = options.maxCharacters ?? DEFAULT_MAX_CHARACTERS;
     this.userAgent = options.userAgent ?? DEFAULT_USER_AGENT;
@@ -93,19 +122,29 @@ export class SourceContentAcquisitionService {
    * Acquire clean content for a given discovery candidate.
    * Flow:
    * 1. Check existing source text length:
-   *    If >= 120 chars -> return existing metadata immediately (no extra fetch).
-   * 2. If < 120 chars -> attempt deep fetch of original article.
-   *    If deep fetch succeeds and yields substantive text (>= 120 chars) -> enrich.
-   *    If deep fetch fails, times out, or is blocked -> retain safe fallback metadata (< 120 chars).
+   *    If >= DEEP_RECOVERY_THRESHOLD_CHARS (800) → return existing metadata immediately.
+   *       These items carry enough context for full NVIDIA extraction without a network round-trip.
+   *    If >= 120 but < DEEP_RECOVERY_THRESHOLD_CHARS → attempt bounded source recovery with
+   *       sourceRecoveryTimeoutMs budget. If recovery yields richer text → use it.
+   *       If recovery is too slow, blocked, or fails → fall back to existing RSS text safely.
+   *       This prevents short-snippet items from causing NVIDIA timeout while preserving quality.
+   *    If < 120 chars → Deep Source Recovery (existing behavior).
+   *       If deep fetch succeeds and yields substantive text (>= 120 chars) → enrich.
+   *       If deep fetch fails, times out, or is blocked → retain safe fallback metadata (< 120 chars).
+   *
+   * SAFETY INVARIANTS:
+   * - Never bypasses robots.txt, CAPTCHA, authentication, or paywalls
+   * - Never invents or replaces content
+   * - All recovery attempts have hard timeouts via AbortController
+   * - Source recovery timeout is bounded to leave adequate budget for NVIDIA extraction
    */
   public async acquireContent(item: DiscoveryItem): Promise<AcquiredSourceContent> {
     const startTime = Date.now();
     const existingRaw = (item.description || (item.rawPayload as any)?.content || '').trim();
     const existingCombined = [item.title, existingRaw].filter(Boolean).join('\n\n').trim();
 
-    // 1. If RSS text is already sufficient (>= 120 chars), skip remote fetch
-    // TEST CASE 1: RSS text >= 120 -> no extra fetch required
-    if (existingCombined.length >= 120) {
+    // TIER 1: RSS text is fully sufficient (>= 800 chars / ~130+ words) → skip remote fetch
+    if (existingCombined.length >= DEEP_RECOVERY_THRESHOLD_CHARS) {
       const wordCount = existingCombined.split(/\s+/).filter(Boolean).length;
       return {
         url: item.sourceUrl,
@@ -124,10 +163,54 @@ export class SourceContentAcquisitionService {
       };
     }
 
-    // 2. RSS text is short (< 120 chars) -> Deep Source Recovery
+    // TIER 2: RSS text is short (120–799 chars) → attempt bounded enrichment fetch
+    // Goal: recover full article text to improve NVIDIA extraction quality and reduce inference time.
+    // If recovery fails/times out, fall back safely to existing RSS text.
+    if (existingCombined.length >= 120) {
+      const targetUrl = item.canonicalUrl || item.sourceUrl;
+
+      // Security: validate URL before any fetch attempt
+      if (!this.isSafeUrl(targetUrl)) {
+        // URL is unsafe → return existing sufficient RSS text with security note
+        const wordCount = existingCombined.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: item.canonicalUrl || item.sourceUrl,
+          title: item.title,
+          description: item.description || '',
+          author: item.author || null,
+          heroImage: item.imageUrl || null,
+          publishedDate: item.publishedAt || null,
+          articleText: existingCombined,
+          wordCount,
+          isTruncated: false,
+          fetchStatus: 'sufficient_metadata',
+          statusCode: 200,
+          durationMs: 0,
+          error: 'SOURCE_RECOVERY_SKIPPED: URL_BLOCKED_UNSAFE — falling back to RSS text',
+        };
+      }
+
+      // Attempt bounded enrichment fetch with sourceRecoveryTimeoutMs budget
+      const cacheKey = `enrich:${targetUrl}`;
+      if (this.fetchCache.has(cacheKey)) {
+        return this.fetchCache.get(cacheKey)!;
+      }
+
+      const enrichPromise = this.performBoundedEnrichmentFetch(
+        item,
+        targetUrl,
+        existingCombined,
+        startTime
+      );
+      this.fetchCache.set(cacheKey, enrichPromise);
+      return enrichPromise;
+    }
+
+    // TIER 3: RSS text is very short (< 120 chars) → Deep Source Recovery (existing behavior)
     const targetUrl = item.canonicalUrl || item.sourceUrl;
 
-    // Check if target URL is safe (TEST CASE 8: malicious/unsafe URL -> blocked)
+    // Check if target URL is safe (TEST CASE 8: malicious/unsafe URL → blocked)
     if (!this.isSafeUrl(targetUrl)) {
       return this.buildFallbackContent(
         item,
@@ -138,7 +221,7 @@ export class SourceContentAcquisitionService {
       );
     }
 
-    // Deduplication check (TEST CASE 7: duplicate fetch attempt -> deduplicated)
+    // Deduplication check (TEST CASE 7: duplicate fetch attempt → deduplicated)
     if (this.fetchCache.has(targetUrl)) {
       return this.fetchCache.get(targetUrl)!;
     }
@@ -147,6 +230,210 @@ export class SourceContentAcquisitionService {
     this.fetchCache.set(targetUrl, fetchPromise);
     return fetchPromise;
   }
+
+  /**
+   * Bounded enrichment fetch for Tier 2 items (120–799 chars of RSS text).
+   * Uses sourceRecoveryTimeoutMs to cap the fetch. If successful and yields more text
+   * than the existing RSS snippet, the enriched content is returned. Otherwise the
+   * existing RSS text is returned as a safe fallback.
+   *
+   * This path never discards existing sufficient content — it only enriches.
+   */
+  private async performBoundedEnrichmentFetch(
+    item: DiscoveryItem,
+    targetUrl: string,
+    existingText: string,
+    startTime: number
+  ): Promise<AcquiredSourceContent> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.sourceRecoveryTimeoutMs);
+
+    try {
+      const response = await fetch(targetUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': this.userAgent,
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Sec-Fetch-Mode': 'navigate',
+        },
+        signal: controller.signal,
+        redirect: 'follow',
+      });
+
+      clearTimeout(timeoutId);
+      const recoveryDurationMs = Date.now() - startTime;
+
+      if (!response.ok) {
+        // Recovery blocked or unavailable → safe fallback to existing RSS text
+        const wordCount = existingText.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: item.canonicalUrl || item.sourceUrl,
+          title: item.title,
+          description: item.description || '',
+          author: item.author || null,
+          heroImage: item.imageUrl || null,
+          publishedDate: item.publishedAt || null,
+          articleText: existingText,
+          wordCount,
+          isTruncated: false,
+          fetchStatus: 'sufficient_metadata',
+          statusCode: response.status,
+          durationMs: recoveryDurationMs,
+          error: `SOURCE_RECOVERY_FAILED: HTTP ${response.status} — using existing RSS text`,
+        };
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('text/html') && !contentType.includes('xml')) {
+        // Unsupported content type → safe fallback
+        const wordCount = existingText.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: item.canonicalUrl || item.sourceUrl,
+          title: item.title,
+          description: item.description || '',
+          author: item.author || null,
+          heroImage: item.imageUrl || null,
+          publishedDate: item.publishedAt || null,
+          articleText: existingText,
+          wordCount,
+          isTruncated: false,
+          fetchStatus: 'sufficient_metadata',
+          statusCode: response.status,
+          durationMs: recoveryDurationMs,
+          error: `SOURCE_RECOVERY_FAILED: Unsupported Content-Type ${contentType} — using existing RSS text`,
+        };
+      }
+
+      const rawHtml = await response.text();
+      if (rawHtml.length > this.maxSizeBytes) {
+        // Oversized response → safe fallback
+        const wordCount = existingText.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: item.canonicalUrl || item.sourceUrl,
+          title: item.title,
+          description: item.description || '',
+          author: item.author || null,
+          heroImage: item.imageUrl || null,
+          publishedDate: item.publishedAt || null,
+          articleText: existingText,
+          wordCount,
+          isTruncated: false,
+          fetchStatus: 'sufficient_metadata',
+          statusCode: response.status,
+          durationMs: recoveryDurationMs,
+          error: `SOURCE_RECOVERY_FAILED: Response too large (${rawHtml.length} bytes) — using existing RSS text`,
+        };
+      }
+
+      const extracted = this.extractAndCleanHtml(rawHtml, targetUrl);
+
+      // Detect anti-bot / CAPTCHA / access-denied responses
+      const isUnusable =
+        !extracted.articleText ||
+        extracted.articleText.length < 50 ||
+        /access denied|please enable javascript|404 not found|sign in to read|blocked by security|robot check/i.test(
+          extracted.articleText.slice(0, 200)
+        );
+
+      if (isUnusable) {
+        // Anti-bot / CAPTCHA / empty → safe fallback to existing RSS text
+        const wordCount = existingText.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: item.canonicalUrl || item.sourceUrl,
+          title: item.title,
+          description: item.description || '',
+          author: item.author || null,
+          heroImage: item.imageUrl || null,
+          publishedDate: item.publishedAt || null,
+          articleText: existingText,
+          wordCount,
+          isTruncated: false,
+          fetchStatus: 'sufficient_metadata',
+          statusCode: response.status,
+          durationMs: recoveryDurationMs,
+          error: 'SOURCE_RECOVERY_FAILED: UNRELATED_OR_EMPTY_HTML — using existing RSS text',
+        };
+      }
+
+      // Enrichment succeeded — prefer recovered text if it's richer than existing RSS snippet
+      let fullArticleText = extracted.articleText;
+      if (item.title && !fullArticleText.includes(item.title)) {
+        fullArticleText = `${item.title}\n\n${fullArticleText}`;
+      }
+
+      // If recovered text is not meaningfully richer, keep existing text
+      if (fullArticleText.length <= existingText.length) {
+        const wordCount = existingText.split(/\s+/).filter(Boolean).length;
+        return {
+          url: item.sourceUrl,
+          canonicalUrl: extracted.canonicalUrl || targetUrl,
+          title: extracted.title || item.title,
+          description: extracted.description || item.description || '',
+          author: extracted.author || item.author || null,
+          heroImage: extracted.heroImage || item.imageUrl || null,
+          publishedDate: extracted.publishedDate || item.publishedAt || null,
+          articleText: existingText,
+          wordCount,
+          isTruncated: false,
+          fetchStatus: 'sufficient_metadata',
+          statusCode: response.status,
+          durationMs: recoveryDurationMs,
+          error: 'SOURCE_RECOVERY_SKIPPED: Recovered text not richer than RSS — using RSS text',
+        };
+      }
+
+      const isTruncated = fullArticleText.length > this.maxCharacters;
+      const finalArticleText = isTruncated ? fullArticleText.slice(0, this.maxCharacters) : fullArticleText;
+      const wordCount = finalArticleText.split(/\s+/).filter(Boolean).length;
+
+      return {
+        url: targetUrl,
+        canonicalUrl: extracted.canonicalUrl || targetUrl,
+        title: extracted.title || item.title,
+        description: extracted.description || item.description || '',
+        author: extracted.author || item.author || null,
+        heroImage: extracted.heroImage || item.imageUrl || null,
+        publishedDate: extracted.publishedDate || item.publishedAt || null,
+        articleText: finalArticleText,
+        wordCount,
+        isTruncated,
+        fetchStatus: 'deep_fetch_success',
+        statusCode: response.status,
+        durationMs: recoveryDurationMs,
+      };
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      const recoveryDurationMs = Date.now() - startTime;
+      const isTimeout = err.name === 'AbortError' || err.message?.includes('aborted');
+
+      // Recovery timed out or network failure → safe fallback to existing RSS text
+      const wordCount = existingText.split(/\s+/).filter(Boolean).length;
+      return {
+        url: item.sourceUrl,
+        canonicalUrl: item.canonicalUrl || item.sourceUrl,
+        title: item.title,
+        description: item.description || '',
+        author: item.author || null,
+        heroImage: item.imageUrl || null,
+        publishedDate: item.publishedAt || null,
+        articleText: existingText,
+        wordCount,
+        isTruncated: false,
+        fetchStatus: 'sufficient_metadata',
+        statusCode: isTimeout ? 408 : undefined,
+        durationMs: recoveryDurationMs,
+        error: isTimeout
+          ? `SOURCE_RECOVERY_TIMEOUT: Bounded fetch timed out after ${this.sourceRecoveryTimeoutMs}ms — using existing RSS text`
+          : `SOURCE_RECOVERY_FAILED: ${err.message || 'Network error'} — using existing RSS text`,
+      };
+    }
+  }
+
 
   private async performDeepFetch(
     item: DiscoveryItem,
