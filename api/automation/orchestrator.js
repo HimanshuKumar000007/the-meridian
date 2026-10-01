@@ -15022,7 +15022,7 @@ var HealthCheckService = class {
     if (!this.client) return defaultQueues;
     try {
       const now = Date.now();
-      const recencyCutoff = new Date(now - 72 * 3600 * 1e3).toISOString();
+      const recencyCutoff = getRecencyCutoffIso();
       const { data: extItems, count: extCount } = await this.client.from("news_discovery_items").select("created_at", { count: "exact" }).in("status", ["new", "candidate"]).or(`published_at.gte.${recencyCutoff},and(published_at.is.null,discovered_at.gte.${recencyCutoff})`).order("created_at", { ascending: true }).limit(1);
       defaultQueues.extraction = extCount || 0;
       if (extItems && extItems.length > 0 && extItems[0].created_at) {

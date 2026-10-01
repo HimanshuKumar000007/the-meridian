@@ -12,6 +12,7 @@ import type {
   HealthStatus,
 } from '../../types/monitoring';
 import { MONITORING_CONFIG } from '../../config/monitoringConfig';
+import { getRecencyCutoffIso } from '../../config/discoveryRecencyPolicy';
 import { getSiteUrl } from '../../config/seoConfig';
 import { SitemapService } from '../distribution/SitemapService';
 import { RssFeedService } from '../distribution/RssFeedService';
@@ -1075,7 +1076,7 @@ export class HealthCheckService {
       const now = Date.now();
 
       // 1. Extraction Queue (active items in news_discovery_items within recency window)
-      const recencyCutoff = new Date(now - 72 * 3600 * 1000).toISOString();
+      const recencyCutoff = getRecencyCutoffIso();
       const { data: extItems, count: extCount } = await this.client
         .from('news_discovery_items')
         .select('created_at', { count: 'exact' })
