@@ -9228,7 +9228,7 @@ var APPROVED_SOURCES_CATALOG = [
     sourceName: "arXiv cs.AI",
     category: "SCIENCE",
     sourceType: "rss",
-    feedUrl: "http://export.arxiv.org/rss/cs.AI",
+    feedUrl: "https://export.arxiv.org/rss/cs.AI",
     active: true,
     authorityLevel: "primary_official",
     allowedUsage: "official_record",
@@ -9524,7 +9524,7 @@ var APPROVED_SOURCES_CATALOG = [
     discoveryRole: "independent_reporting",
     evidenceRole: "corroborating_evidence",
     pollingCadence: 15,
-    categoryHints: ["world", "technology"]
+    categoryHints: ["technology"]
   }),
   createApprovedSource({
     sourceId: "src-nyt-world",
@@ -9538,7 +9538,7 @@ var APPROVED_SOURCES_CATALOG = [
     discoveryRole: "independent_reporting",
     evidenceRole: "corroborating_evidence",
     pollingCadence: 10,
-    categoryHints: ["world", "technology"]
+    categoryHints: ["technology"]
   })
 ];
 var ApprovedSourceRegistry = class {
@@ -9721,10 +9721,13 @@ var EventDeduplicationService = class {
       return { isNewEvent: false, cluster: bestMatch };
     }
     const clusterId = `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const rawCategory = (lead.categoryHint || "").trim().toLowerCase();
+    const approvedCategories = ["ai", "technology", "science", "gaming", "space", "business"];
+    const clusterCategory = approvedCategories.includes(rawCategory) ? rawCategory : "technology";
     const newCluster = {
       clusterId,
       canonicalTitle: lead.title,
-      category: lead.categoryHint || "world",
+      category: clusterCategory,
       firstSeenAt: lead.publishedAt || (/* @__PURE__ */ new Date()).toISOString(),
       lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString(),
       leads: [lead],

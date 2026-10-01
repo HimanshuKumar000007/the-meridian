@@ -121,10 +121,14 @@ export class EventDeduplicationService {
 
     // CASE 2: BRAND NEW EVENT -> Create new EventCluster
     const clusterId = `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const rawCategory = (lead.categoryHint || '').trim().toLowerCase();
+    const approvedCategories = ['ai', 'technology', 'science', 'gaming', 'space', 'business'];
+    const clusterCategory = approvedCategories.includes(rawCategory) ? rawCategory : 'technology';
+
     const newCluster: EventCluster = {
       clusterId,
       canonicalTitle: lead.title,
-      category: lead.categoryHint || 'world',
+      category: clusterCategory,
       firstSeenAt: lead.publishedAt || new Date().toISOString(),
       lastUpdatedAt: new Date().toISOString(),
       leads: [lead],

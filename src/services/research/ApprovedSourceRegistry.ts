@@ -374,7 +374,7 @@ export const APPROVED_SOURCES_CATALOG: ApprovedSource[] = [
     sourceName: 'arXiv cs.AI',
     category: 'SCIENCE',
     sourceType: 'rss',
-    feedUrl: 'http://export.arxiv.org/rss/cs.AI',
+    feedUrl: 'https://export.arxiv.org/rss/cs.AI',
     active: true,
     authorityLevel: 'primary_official',
     allowedUsage: 'official_record',
@@ -675,7 +675,7 @@ export const APPROVED_SOURCES_CATALOG: ApprovedSource[] = [
     discoveryRole: 'independent_reporting',
     evidenceRole: 'corroborating_evidence',
     pollingCadence: 15,
-    categoryHints: ['world', 'technology'],
+    categoryHints: ['technology'],
   }),
   createApprovedSource({
     sourceId: 'src-nyt-world',
@@ -689,7 +689,7 @@ export const APPROVED_SOURCES_CATALOG: ApprovedSource[] = [
     discoveryRole: 'independent_reporting',
     evidenceRole: 'corroborating_evidence',
     pollingCadence: 10,
-    categoryHints: ['world', 'technology'],
+    categoryHints: ['technology'],
   }),
 ];
 
