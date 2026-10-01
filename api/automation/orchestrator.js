@@ -4839,7 +4839,9 @@ function detectSensitiveTopics(title, summary, facts) {
   const detectedFlags = [];
   for (const [topic, kws] of Object.entries(SENSITIVE_KEYWORDS)) {
     for (const kw of kws) {
-      if (combined.includes(kw)) {
+      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(`\\b${escaped}\\b`, "i");
+      if (regex.test(combined)) {
         detectedFlags.push(topic);
         break;
       }
