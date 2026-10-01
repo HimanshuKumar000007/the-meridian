@@ -12,6 +12,7 @@ import { AutomationHealthService } from '../services/automation/AutomationHealth
 import { SupabaseAutomationRepository } from '../data/repositories/SupabaseAutomationRepository';
 import { AutomationConfigService } from '../services/automation/AutomationConfigService';
 import { SchedulerCapabilityService } from '../services/automation/SchedulerCapabilityService';
+import { ResearchCanaryService } from '../services/research/ResearchCanaryService';
 
 export const config = {
   maxDuration: 30,
@@ -65,10 +66,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const health = await healthService.getHealth();
     const capabilities = capabilityService.getCapabilities();
 
+    const canaryService = new ResearchCanaryService(supabase);
+    const canaryPublishedCount = await canaryService.getCanaryPublishedCount();
+    const researchCanary = {
+      mode: process.env.RESEARCH_PIPELINE_MODE || 'canary',
+      active: canaryService.isCanaryActive(),
+      category: canaryService.getCanaryCategory(),
+      activationCutoff: canaryService.getActivationCutoff().toISOString(),
+      maxPublications: canaryService.getMaxCanaryPublications(),
+      publishedCount: canaryPublishedCount,
+      remainingSlots: Math.max(0, canaryService.getMaxCanaryPublications() - canaryPublishedCount),
+    };
+
     return res.status(200).json({
       success: true,
       health,
       capabilities,
+      researchCanary,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Internal Server Error' });
