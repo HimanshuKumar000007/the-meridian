@@ -264,6 +264,7 @@ export class PublicationGateService {
     // 5. SOURCE ATTRIBUTION CHECK
     // ----------------------------------------------------
     const allSources = input.sources || story.sources || [];
+    const sourceEvidenceList = (extraction as any)?.sourceEvidence || (extraction as any)?.source_evidence || [];
     const hasValidSource =
       allSources.some(
         (s) => s.name && s.name.trim().length > 0 && s.url && /^https?:\/\//i.test(s.url)
@@ -271,7 +272,10 @@ export class PublicationGateService {
       (extraction.sources &&
         extraction.sources.some(
           (s) => s.name && s.name.trim().length > 0 && s.url && /^https?:\/\//i.test(s.url)
-        ));
+        )) ||
+      sourceEvidenceList.some(
+        (se: any) => (se.url || se.sourceUrl) && /^https?:\/\//i.test(se.url || se.sourceUrl)
+      );
 
     if (!hasValidSource) {
       return {

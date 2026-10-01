@@ -269,12 +269,25 @@ export class StoryLifecycleEngine {
         reading_time_minutes: Math.max(2, Math.ceil((candidate.summary.length + 300) / 800)),
       };
 
+      let storySources = candidate.sources && candidate.sources.length > 0 ? candidate.sources : [];
+      if (storySources.length === 0 && Array.isArray(candidate.sourceEvidence) && candidate.sourceEvidence.length > 0) {
+        const seenUrls = new Set<string>();
+        for (const se of candidate.sourceEvidence as any[]) {
+          const url = se.url || se.sourceUrl;
+          const name = se.source || se.name || candidate.category || 'News Source';
+          if (url && /^https?:\/\//i.test(url) && !seenUrls.has(url)) {
+            seenUrls.add(url);
+            storySources.push({ name, url });
+          }
+        }
+      }
+
       if (!options.dryRun) {
         await this.repository.createStory(
           newStory,
           cluster.id,
           candidate.facts,
-          candidate.sources
+          storySources
         );
       }
 

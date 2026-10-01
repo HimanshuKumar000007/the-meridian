@@ -5310,10 +5310,13 @@ var PublicationGateService = class _PublicationGateService {
       };
     }
     const allSources = input.sources || story.sources || [];
+    const sourceEvidenceList = extraction?.sourceEvidence || extraction?.source_evidence || [];
     const hasValidSource = allSources.some(
       (s) => s.name && s.name.trim().length > 0 && s.url && /^https?:\/\//i.test(s.url)
     ) || extraction.sources && extraction.sources.some(
       (s) => s.name && s.name.trim().length > 0 && s.url && /^https?:\/\//i.test(s.url)
+    ) || sourceEvidenceList.some(
+      (se) => (se.url || se.sourceUrl) && /^https?:\/\//i.test(se.url || se.sourceUrl)
     );
     if (!hasValidSource) {
       return {
@@ -6485,12 +6488,24 @@ var StoryLifecycleEngine = class {
         content_version: 1,
         reading_time_minutes: Math.max(2, Math.ceil((candidate.summary.length + 300) / 800))
       };
+      let storySources = candidate.sources && candidate.sources.length > 0 ? candidate.sources : [];
+      if (storySources.length === 0 && Array.isArray(candidate.sourceEvidence) && candidate.sourceEvidence.length > 0) {
+        const seenUrls = /* @__PURE__ */ new Set();
+        for (const se of candidate.sourceEvidence) {
+          const url = se.url || se.sourceUrl;
+          const name = se.source || se.name || candidate.category || "News Source";
+          if (url && /^https?:\/\//i.test(url) && !seenUrls.has(url)) {
+            seenUrls.add(url);
+            storySources.push({ name, url });
+          }
+        }
+      }
       if (!options.dryRun) {
         await this.repository.createStory(
           newStory,
           cluster.id,
           candidate.facts,
-          candidate.sources
+          storySources
         );
       }
       const decision2 = {
@@ -6937,6 +6952,18 @@ var SupabaseLifecycleRepository = class {
         if (existingEv) continue;
         const { data: ext } = await this.client.from("news_extractions").select("*").eq("id", val.extraction_id).maybeSingle();
         if (!ext) continue;
+        const extractedSources = [];
+        if (Array.isArray(ext.source_evidence)) {
+          const seenUrls = /* @__PURE__ */ new Set();
+          for (const se of ext.source_evidence) {
+            const url = se.url || se.sourceUrl;
+            const name = se.source || se.name || ext.category || "News Source";
+            if (url && /^https?:\/\//i.test(url) && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              extractedSources.push({ name, url });
+            }
+          }
+        }
         candidateInputs.push({
           extraction: {
             id: ext.id,
@@ -6957,7 +6984,7 @@ var SupabaseLifecycleRepository = class {
             facts: ext.facts || [],
             timelineCandidates: ext.timeline_candidates || [],
             contentBlocks: ext.content || [],
-            sources: [],
+            sources: extractedSources,
             heroImage: null,
             sourceEvidence: ext.source_evidence || [],
             overallConfidence: ext.overall_confidence || 0.9,

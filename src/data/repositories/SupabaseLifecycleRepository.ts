@@ -470,6 +470,19 @@ export class SupabaseLifecycleRepository implements LifecycleRepository {
 
         if (!ext) continue;
 
+        const extractedSources: Array<{ name: string; url: string }> = [];
+        if (Array.isArray(ext.source_evidence)) {
+          const seenUrls = new Set<string>();
+          for (const se of ext.source_evidence) {
+            const url = se.url || se.sourceUrl;
+            const name = se.source || se.name || ext.category || 'News Source';
+            if (url && /^https?:\/\//i.test(url) && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              extractedSources.push({ name, url });
+            }
+          }
+        }
+
         candidateInputs.push({
           extraction: {
             id: ext.id,
@@ -490,7 +503,7 @@ export class SupabaseLifecycleRepository implements LifecycleRepository {
             facts: ext.facts || [],
             timelineCandidates: ext.timeline_candidates || [],
             contentBlocks: ext.content || [],
-            sources: [],
+            sources: extractedSources,
             heroImage: null,
             sourceEvidence: ext.source_evidence || [],
             overallConfidence: ext.overall_confidence || 0.9,
