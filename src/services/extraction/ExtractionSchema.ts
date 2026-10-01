@@ -69,9 +69,9 @@ export const ExtractedTimelineCandidateSchema = z.object({
 });
 
 export const SourceEvidenceItemSchema = z.object({
-  claim: z.string().min(1),
-  evidenceText: z.string().min(1),
-  sourceUrl: z.string().url().or(z.string().min(1)),
+  claim: z.string().default(''),
+  evidenceText: z.string().default(''),
+  sourceUrl: z.string().default(''),
   confidence: z.number().min(0).max(1).default(0.9),
 });
 

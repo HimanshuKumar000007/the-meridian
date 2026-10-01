@@ -109,10 +109,15 @@ function extractLink(rawLink: any): string {
 
     const anyHref = rawLink.find((l) => l['@_href']);
     if (anyHref && anyHref['@_href']) return String(anyHref['@_href']).trim();
+
+    const anyText = rawLink.find((l) => typeof l === 'string' || l?.['#text'] || l?.__cdata);
+    if (anyText) return extractLink(anyText);
   }
 
-  if (typeof rawLink === 'object' && rawLink['@_href']) {
-    return String(rawLink['@_href']).trim();
+  if (typeof rawLink === 'object') {
+    if (rawLink['@_href']) return String(rawLink['@_href']).trim();
+    if (rawLink['#text']) return String(rawLink['#text']).trim();
+    if (rawLink.__cdata) return String(rawLink.__cdata).trim();
   }
 
   return '';
@@ -199,10 +204,14 @@ export class FeedParser {
       if (!item || typeof item !== 'object') continue;
 
       const title = sanitizeFeedText(item.title);
-      const link = extractLink(item.link);
+      let link = extractLink(item.link);
       const guid = item.guid
         ? (typeof item.guid === 'object' ? item.guid['#text'] || item.guid.__cdata : String(item.guid))
         : undefined;
+
+      if (!link && guid && (guid.startsWith('http://') || guid.startsWith('https://'))) {
+        link = guid.trim();
+      }
 
       const description = sanitizeFeedText(
         item['content:encoded'] || item.description || ''

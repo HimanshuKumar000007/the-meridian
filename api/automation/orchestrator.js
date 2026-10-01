@@ -621,9 +621,13 @@ function extractLink(rawLink) {
     if (altLink && altLink["@_href"]) return String(altLink["@_href"]).trim();
     const anyHref = rawLink.find((l) => l["@_href"]);
     if (anyHref && anyHref["@_href"]) return String(anyHref["@_href"]).trim();
+    const anyText = rawLink.find((l) => typeof l === "string" || l?.["#text"] || l?.__cdata);
+    if (anyText) return extractLink(anyText);
   }
-  if (typeof rawLink === "object" && rawLink["@_href"]) {
-    return String(rawLink["@_href"]).trim();
+  if (typeof rawLink === "object") {
+    if (rawLink["@_href"]) return String(rawLink["@_href"]).trim();
+    if (rawLink["#text"]) return String(rawLink["#text"]).trim();
+    if (rawLink.__cdata) return String(rawLink.__cdata).trim();
   }
   return "";
 }
@@ -684,8 +688,11 @@ var FeedParser = class {
     for (const item of list) {
       if (!item || typeof item !== "object") continue;
       const title = sanitizeFeedText(item.title);
-      const link = extractLink(item.link);
+      let link = extractLink(item.link);
       const guid = item.guid ? typeof item.guid === "object" ? item.guid["#text"] || item.guid.__cdata : String(item.guid) : void 0;
+      if (!link && guid && (guid.startsWith("http://") || guid.startsWith("https://"))) {
+        link = guid.trim();
+      }
       const description = sanitizeFeedText(
         item["content:encoded"] || item.description || ""
       );
@@ -914,8 +921,9 @@ var DiscoveryNormalizer = class {
     if (!title && !rawLink) {
       return null;
     }
-    const sourceUrl = resolveAbsoluteUrl(rawLink, source.baseUrl);
-    const canonicalUrl = normalizeSourceUrl(sourceUrl);
+    const resolvedSourceUrl = resolveAbsoluteUrl(rawLink, source.baseUrl) || source.baseUrl;
+    const canonicalUrl = normalizeSourceUrl(resolvedSourceUrl) || source.baseUrl;
+    const sourceUrl = resolvedSourceUrl;
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const publishedAt = normalizeDate(rawItem.pubDate) || nowIso;
     const sourceUpdatedAt = normalizeDate(rawItem.updatedDate);
@@ -2681,9 +2689,9 @@ var ExtractedTimelineCandidateSchema = z.object({
   description: z.string().min(1).max(1e3)
 });
 var SourceEvidenceItemSchema = z.object({
-  claim: z.string().min(1),
-  evidenceText: z.string().min(1),
-  sourceUrl: z.string().url().or(z.string().min(1)),
+  claim: z.string().default(""),
+  evidenceText: z.string().default(""),
+  sourceUrl: z.string().default(""),
   confidence: z.number().min(0).max(1).default(0.9)
 });
 var ContentBlockSchema = z.object({
@@ -3106,6 +3114,15 @@ ${userPrompt}`,
             label: String(f.label).trim(),
             value: f.value !== null && f.value !== void 0 ? String(f.value).trim() : "N/A"
           })).filter((f) => f.value.length > 0);
+        }
+        if (Array.isArray(parsedObj.sourceEvidence)) {
+          const fallbackUrl = item.canonicalUrl && item.canonicalUrl.trim().length > 0 ? item.canonicalUrl.trim() : item.sourceUrl && item.sourceUrl.trim().length > 0 ? item.sourceUrl.trim() : "https://themeridian.in";
+          parsedObj.sourceEvidence = parsedObj.sourceEvidence.filter((se) => se && typeof se === "object").map((se) => ({
+            claim: String(se.claim || "").trim(),
+            evidenceText: String(se.evidenceText || se.claim || "").trim(),
+            sourceUrl: typeof se.sourceUrl === "string" && se.sourceUrl.trim().length > 0 ? se.sourceUrl.trim() : fallbackUrl,
+            confidence: typeof se.confidence === "number" ? Math.max(0, Math.min(1, se.confidence)) : 0.9
+          })).filter((se) => se.claim.length > 0 || se.evidenceText.length > 0);
         }
       }
       const parseResult = ExtractedPayloadSchema.safeParse(parsedObj);

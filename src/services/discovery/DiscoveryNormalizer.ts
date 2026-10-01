@@ -60,8 +60,9 @@ export class DiscoveryNormalizer {
       return null;
     }
 
-    const sourceUrl = resolveAbsoluteUrl(rawLink, source.baseUrl);
-    const canonicalUrl = normalizeSourceUrl(sourceUrl);
+    const resolvedSourceUrl = resolveAbsoluteUrl(rawLink, source.baseUrl) || source.baseUrl;
+    const canonicalUrl = normalizeSourceUrl(resolvedSourceUrl) || source.baseUrl;
+    const sourceUrl = resolvedSourceUrl;
 
     // Published date normalization (fallback to now if missing/invalid)
     const nowIso = new Date().toISOString();

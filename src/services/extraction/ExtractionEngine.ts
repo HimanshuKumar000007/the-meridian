@@ -372,6 +372,23 @@ export class ExtractionEngine {
             }))
             .filter((f: any) => f.value.length > 0);
         }
+
+        if (Array.isArray(parsedObj.sourceEvidence)) {
+          const fallbackUrl = (item.canonicalUrl && item.canonicalUrl.trim().length > 0)
+            ? item.canonicalUrl.trim()
+            : (item.sourceUrl && item.sourceUrl.trim().length > 0 ? item.sourceUrl.trim() : 'https://themeridian.in');
+          parsedObj.sourceEvidence = parsedObj.sourceEvidence
+            .filter((se: any) => se && typeof se === 'object')
+            .map((se: any) => ({
+              claim: String(se.claim || '').trim(),
+              evidenceText: String(se.evidenceText || se.claim || '').trim(),
+              sourceUrl: (typeof se.sourceUrl === 'string' && se.sourceUrl.trim().length > 0)
+                ? se.sourceUrl.trim()
+                : fallbackUrl,
+              confidence: typeof se.confidence === 'number' ? Math.max(0, Math.min(1, se.confidence)) : 0.9,
+            }))
+            .filter((se: any) => se.claim.length > 0 || se.evidenceText.length > 0);
+        }
       }
 
       // Schema Validation via Zod
