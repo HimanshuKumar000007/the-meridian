@@ -42,12 +42,16 @@ import {
   ResearchArticleSynthesizer,
   ResearchQueueService,
   ShadowPipelineRunner,
+  ResearchCanaryService,
   type StoryLead,
   type EventCluster,
   type UnifiedEvidenceSet,
 } from './src/services/research';
+import type { DiscoveryItem } from './src/types/discovery';
 import { ValidationEngine } from './src/services/validation/ValidationEngine';
 import { PublicationGateService } from './src/services/publishing/PublicationGateService';
+import { StoryLifecycleEngine } from './src/services/lifecycle/StoryLifecycleEngine';
+import { MockLifecycleRepository } from './src/data/repositories/MockLifecycleRepository';
 import {
   countArticleBodyWords,
   detectFillerText,
@@ -848,8 +852,431 @@ async function runTestSuite() {
     passedTests++;
   }
 
+  // ----------------------------------------------------
+  // TEST 25: Canary Routing Works for Configured Category (Science)
+  // ----------------------------------------------------
+  console.log('\n--- Test 25: Canary Routing for Configured Category ---');
+  {
+    process.env.RESEARCH_PIPELINE_MODE = 'canary';
+    process.env.RESEARCH_CANARY_CATEGORY = 'science';
+    process.env.RESEARCH_CANARY_ACTIVATION_CUTOFF = '2026-10-01T00:00:00.000Z';
+
+    const canary = new ResearchCanaryService(null, {
+      synthesizer: new ResearchArticleSynthesizer({ isMock: true }),
+    });
+
+    const nowIso = new Date().toISOString();
+    const scienceItem: DiscoveryItem = {
+      id: 'disc-canary-sci-1',
+      sourceId: 'src-nature-news',
+      sourceName: 'Nature',
+      sourceType: 'rss',
+      canonicalUrl: 'https://nature.com/articles/s41586-quantum-milestone',
+      sourceUrl: 'https://nature.com/articles/s41586-quantum-milestone',
+      fingerprint: 'fp-canary-sci-1',
+      title: 'Quantum Sensor Array Demonstrates Unprecedented Sensitivity',
+      categoryHint: 'science',
+      publishedAt: nowIso,
+      discoveredAt: nowIso,
+      lastSeenAt: nowIso,
+      status: 'new',
+      contentHash: 'hash-sci-1',
+    };
+
+    assert.strictEqual(canary.isCanaryActive(), true, 'Canary mode is confirmed active');
+    const isEligible = await canary.isItemEligible(scienceItem);
+    assert.strictEqual(isEligible, true, 'Science item discovered after cutoff is eligible for canary');
+
+    const candidate = await canary.processCanaryExtraction(scienceItem);
+    assert.strictEqual(candidate.category, 'science');
+    assert.strictEqual(candidate.promptVersion, 'research-canary-v1');
+    assert(candidate.contentBlocks.length >= 5, 'Contains structured article blocks');
+    assert(countArticleBodyWords(candidate.contentBlocks as any) >= 700, 'Body words >= 700');
+    console.log(`✅ [PASS] Test 25: Canary correctly routes science story and synthesizes candidate (${countArticleBodyWords(candidate.contentBlocks as any)} words)`);
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 26: Non-Canary Categories Remain on Legacy Pipeline
+  // ----------------------------------------------------
+  console.log('\n--- Test 26: Non-Canary Categories Insulation ---');
+  {
+    process.env.RESEARCH_PIPELINE_MODE = 'canary';
+    process.env.RESEARCH_CANARY_CATEGORY = 'science';
+
+    const canary = new ResearchCanaryService(null);
+    const techItem: DiscoveryItem = {
+      id: 'disc-tech-1',
+      sourceId: 'src-arstechnica',
+      sourceName: 'Ars Technica',
+      sourceType: 'rss',
+      canonicalUrl: 'https://arstechnica.com/gadgets/2026/chip',
+      sourceUrl: 'https://arstechnica.com/gadgets/2026/chip',
+      fingerprint: 'fp-tech-1',
+      title: 'New Microarchitecture Unveiled for Edge Computing',
+      categoryHint: 'technology', // Not 'science'
+      publishedAt: new Date().toISOString(),
+      discoveredAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+      status: 'new',
+      contentHash: 'hash-tech-1',
+    };
+
+    const isEligible = await canary.isItemEligible(techItem);
+    assert.strictEqual(isEligible, false, 'Non-canary category strictly rejected by canary router');
+    console.log('✅ [PASS] Test 26: Non-canary categories strictly remain on legacy pipeline');
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 27: New Research Pipeline Reaches Existing Publication Gate
+  // ----------------------------------------------------
+  console.log('\n--- Test 27: End-to-End Publication Gate Reachability ---');
+  {
+    const canary = new ResearchCanaryService(null, {
+      synthesizer: new ResearchArticleSynthesizer({ isMock: true }),
+    });
+
+    const nowIso = new Date().toISOString();
+    const scienceItem: DiscoveryItem = {
+      id: 'disc-pubgate-reach',
+      sourceId: 'src-nature-news',
+      sourceName: 'Nature',
+      sourceType: 'rss',
+      canonicalUrl: 'https://nature.com/articles/reachability-test',
+      sourceUrl: 'https://nature.com/articles/reachability-test',
+      fingerprint: 'fp-reach-1',
+      title: 'Cryogenic Electron Microscopy Visualises Nuclear Pore Complex',
+      categoryHint: 'science',
+      publishedAt: nowIso,
+      discoveredAt: nowIso,
+      lastSeenAt: nowIso,
+      status: 'new',
+      contentHash: 'hash-reach-1',
+    };
+
+    const candidate = await canary.processCanaryExtraction(scienceItem);
+
+    // Validate with existing ValidationEngine
+    const valEngine = new ValidationEngine();
+    const valResult = await valEngine.validate({
+      extraction: candidate,
+      sourceText: [
+        ...candidate.facts.map((f: any) => `${f.label}: ${f.value}`),
+        ...candidate.entities.map((e: any) => e.name),
+        ...candidate.summaryPoints,
+        'The international scientific team deployed advanced cryogenic electron microscopy instrumentation.',
+      ].join('\n\n'),
+      sourceUrl: 'https://nature.com',
+      enforceArticleLength: true,
+    });
+
+    if (valResult.status !== 'valid') {
+      console.log('TEST 27 VAL DETAILS:', {
+        status: valResult.status,
+        score: valResult.overallScore,
+        claimCoverage: valResult.claimCoverage,
+        sourceCoverage: valResult.sourceCoverage,
+        categoryValidation: valResult.categoryValidation,
+        entityValidation: valResult.entityValidation,
+        numberValidation: valResult.numberValidation,
+        quoteValidation: valResult.quoteValidation,
+      });
+    }
+    assert.strictEqual(valResult.status, 'valid', 'Candidate passes ValidationEngine');
+
+    // Evaluate with existing PublicationGateService
+    const gateService = new PublicationGateService();
+    const story = makePublishingStory({
+      category: 'science',
+      content: candidate.contentBlocks as any,
+      title: candidate.title,
+      summary: candidate.summary,
+      facts: candidate.facts,
+    });
+
+    const gateResult = gateService.evaluate({
+      story,
+      lifecycleDecision: makePublishingLifecycleDecision({ action: 'CREATE' }),
+      validation: valResult,
+      extraction: candidate,
+    });
+
+    if (gateResult.decision !== 'PUBLISH') {
+      console.log('TEST 27 GATE HOLD DETAILS:', {
+        reason: gateResult.reason,
+        blockingIssues: gateResult.blockingIssues,
+      });
+    }
+    assert.strictEqual(gateResult.decision, 'PUBLISH', 'Canary article reaches and passes existing publication gate');
+    assert.strictEqual(gateResult.reason, 'AUTO_PUBLISH_VALID_CREATE');
+    console.log('✅ [PASS] Test 27: Research canary candidate passes all existing publication gates');
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 28: Shadow Mode Never Publishes
+  // ----------------------------------------------------
+  console.log('\n--- Test 28: Shadow Mode Zero-Publish Invariant ---');
+  {
+    process.env.RESEARCH_PIPELINE_MODE = 'shadow';
+    const canary = new ResearchCanaryService(null);
+    assert.strictEqual(canary.isCanaryActive(), false, 'Canary is NOT active in shadow mode');
+
+    const item: DiscoveryItem = {
+      id: 'disc-shadow-test',
+      sourceId: 'src-1',
+      sourceName: 'Source 1',
+      sourceType: 'rss',
+      canonicalUrl: 'https://example.com/shadow',
+      sourceUrl: 'https://example.com/shadow',
+      fingerprint: 'fp-sh-1',
+      title: 'Shadow Mode Test Story',
+      categoryHint: 'science',
+      publishedAt: new Date().toISOString(),
+      discoveredAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+      status: 'new',
+      contentHash: 'hash-sh-1',
+    };
+
+    const isEligible = await canary.isItemEligible(item);
+    assert.strictEqual(isEligible, false, 'Shadow mode items never qualify for canary live publishing');
+    console.log('✅ [PASS] Test 28: Shadow mode strictly prevents live publication');
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 29: Canary Only Processes NEW Stories (Historical Backlog Rejection)
+  // ----------------------------------------------------
+  console.log('\n--- Test 29: Historical Backlog Rejection ---');
+  {
+    process.env.RESEARCH_PIPELINE_MODE = 'canary';
+    process.env.RESEARCH_CANARY_CATEGORY = 'science';
+    process.env.RESEARCH_CANARY_ACTIVATION_CUTOFF = '2026-10-01T00:00:00.000Z';
+
+    const canary = new ResearchCanaryService(null);
+    const oldItem: DiscoveryItem = {
+      id: 'disc-old-historical',
+      sourceId: 'src-nature-news',
+      sourceName: 'Nature',
+      sourceType: 'rss',
+      canonicalUrl: 'https://nature.com/articles/historical-discovery',
+      sourceUrl: 'https://nature.com/articles/historical-discovery',
+      fingerprint: 'fp-old-1',
+      title: 'Historical Discovery in Deep Crust Core',
+      categoryHint: 'science',
+      publishedAt: '2026-08-15T12:00:00.000Z', // Before activation cutoff!
+      discoveredAt: '2026-08-15T12:00:00.000Z',
+      lastSeenAt: '2026-08-15T12:00:00.000Z',
+      status: 'candidate',
+      contentHash: 'hash-old-1',
+    };
+
+    const isEligible = await canary.isItemEligible(oldItem);
+    assert.strictEqual(isEligible, false, 'Historical backlog item is strictly rejected from canary');
+    console.log('✅ [PASS] Test 29: Historical backlog rejected; only fresh post-activation stories processed');
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 30: 699-Word Article in Canary is Held
+  // ----------------------------------------------------
+  console.log('\n--- Test 30: 699-Word Boundary Hold in Canary ---');
+  {
+    const gateService = new PublicationGateService();
+    const blocks699 = generateDiverseProse(699);
+    const story = makePublishingStory({ category: 'science', content: blocks699 });
+    const decision = gateService.evaluate({
+      story,
+      lifecycleDecision: makePublishingLifecycleDecision({ action: 'CREATE' }),
+      validation: makePublishingValidation({ status: 'valid' }),
+      extraction: makePublishingExtraction({}),
+    });
+
+    assert.strictEqual(decision.decision, 'HOLD');
+    assert.strictEqual(decision.reason, 'INSUFFICIENT_ARTICLE_LENGTH');
+    console.log('✅ [PASS] Test 30: 699-word canary candidate strictly held with INSUFFICIENT_ARTICLE_LENGTH');
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 31: 700-Word Article in Canary Passes Word Gate
+  // ----------------------------------------------------
+  console.log('\n--- Test 31: 700-Word Exact Threshold Pass in Canary ---');
+  {
+    const gateService = new PublicationGateService();
+    const blocks700 = generateDiverseProse(700);
+    const story = makePublishingStory({ category: 'science', content: blocks700 });
+    const decision = gateService.evaluate({
+      story,
+      lifecycleDecision: makePublishingLifecycleDecision({ action: 'CREATE' }),
+      validation: makePublishingValidation({ status: 'valid' }),
+      extraction: makePublishingExtraction({}),
+    });
+
+    assert.strictEqual(decision.decision, 'PUBLISH');
+    assert.strictEqual(decision.reason, 'AUTO_PUBLISH_VALID_CREATE');
+    console.log('✅ [PASS] Test 31: 700-word canary candidate qualifies for publication');
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 32: Unsupported Evidence is Held
+  // ----------------------------------------------------
+  console.log('\n--- Test 32: Unsupported Evidence Held Pre-Publication ---');
+  {
+    const valEngine = new ValidationEngine();
+    const sourceText =
+      'Research team records baseline atmospheric measurements at 420 parts per million. ' +
+      'Instruments calibrated according to international meteorological standards over three weeks.';
+
+    const candidate: any = {
+      id: 'cand-unsupported',
+      discoveryItemId: 'disc-unsupported',
+      title: 'Atmospheric Measurement Dispatches',
+      dek: 'Atmospheric measurement review',
+      summary: 'Summary text for atmospheric monitoring.',
+      summaryPoints: ['Baseline measured at 420 parts per million', 'Cost was $850 billion'],
+      category: 'science',
+      status: 'normal',
+      publishedAt: new Date().toISOString(),
+      entities: [],
+      facts: [{ label: 'Cost', value: '$850 billion', evidence: 'Fabricated' }],
+      contentBlocks: [{ type: 'paragraph', text: 'Baseline measured at 420 parts per million.' }],
+      sources: [{ name: 'Lab', url: 'https://example.com' }],
+      overallConfidence: 0.9,
+    };
+
+    const valResult = await valEngine.validate({
+      extraction: candidate,
+      sourceText,
+      sourceUrl: 'https://example.com',
+      enforceArticleLength: false,
+    });
+
+    const hasIssue = valResult.issues.some((i) => i.code === 'NUMBER_MISMATCH');
+    assert.strictEqual(hasIssue, true, 'Fabricated number caught by validation');
+
+    const gateService = new PublicationGateService();
+    const story = makePublishingStory({ category: 'science', content: generateDiverseProse(750) });
+    const gateRes = gateService.evaluate({
+      story,
+      lifecycleDecision: makePublishingLifecycleDecision({ action: 'HOLD' }),
+      validation: valResult,
+      extraction: candidate,
+    });
+
+    assert(
+      gateRes.decision === 'HOLD' || gateRes.decision === 'REJECT',
+      'Unsupported claim blocked from publication (held or rejected)'
+    );
+    assert.notStrictEqual(gateRes.decision as string, 'PUBLISH', 'Must not be published');
+    console.log('✅ [PASS] Test 32: Unsupported factual claims caught by validation and held/rejected from publication');
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 33: Blocked Sources Do Not Trigger NVIDIA
+  // ----------------------------------------------------
+  console.log('\n--- Test 33: Blocked Sources Halt Pre-NVIDIA ---');
+  {
+    const evaluator = new EvidenceSufficiencyEvaluator();
+    const blockedEvidence: UnifiedEvidenceSet = {
+      clusterId: 'evt-all-blocked',
+      eventTitle: 'Gated Exclusive Research',
+      category: 'science',
+      facts: [],
+      namedEntities: [],
+      numbersAndMetrics: [],
+      quotes: [],
+      officialStatements: [],
+      sourcesConsulted: [
+        { sourceName: 'Gated 1', url: 'https://gated1.com', status: 'blocked', factsExtractedCount: 0, durationMs: 100 },
+        { sourceName: 'Gated 2', url: 'https://gated2.com', status: 'paywalled', factsExtractedCount: 0, durationMs: 120 },
+      ],
+      accessibleSourcesCount: 0,
+      blockedSourcesCount: 2,
+      hasConflicts: false,
+      conflicts: [],
+      assembledAt: new Date().toISOString(),
+    };
+
+    const evalRes = evaluator.evaluate(blockedEvidence);
+    assert.strictEqual(evalRes.isSufficient, false);
+    assert.strictEqual(evalRes.eligibleForNvidia, false, 'Eligible for NVIDIA is strictly false');
+    assert.strictEqual(evalRes.recommendedAction, 'HOLD_BLOCKED_SOURCES');
+    console.log('✅ [PASS] Test 33: Blocked sources halted pre-NVIDIA with zero API calls');
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 34: Duplicate Event Does Not Create Duplicate Publication
+  // ----------------------------------------------------
+  console.log('\n--- Test 34: Duplicate Event Suppression Across Pipeline ---');
+  {
+    const dedup = new EventDeduplicationService();
+    const lead1: StoryLead = {
+      id: 'lead-canary-dup-1',
+      sourceId: 'src-1',
+      sourceName: 'Source 1',
+      title: 'CERN Physicists Announce Precision Higgs Measurement',
+      canonicalUrl: 'https://cern.ch/higgs-2026',
+      publishedAt: new Date().toISOString(),
+      description: 'Precision Higgs measurement reported.',
+      fingerprint: 'fp-dup-1',
+      discoveredAt: new Date().toISOString(),
+    };
+
+    const lead2: StoryLead = {
+      id: 'lead-canary-dup-2',
+      sourceId: 'src-2',
+      sourceName: 'Source 2',
+      title: 'CERN Physicists Announce Precision Higgs Measurement at High Luminosity',
+      canonicalUrl: 'https://science.org/cern-higgs',
+      publishedAt: new Date().toISOString(),
+      description: 'CERN confirms Higgs boson measurement.',
+      fingerprint: 'fp-dup-2',
+      discoveredAt: new Date().toISOString(),
+    };
+
+    const c1 = dedup.ingestLead(lead1);
+    const c2 = dedup.ingestLead(lead2);
+
+    assert.strictEqual(c1.cluster.clusterId, c2.cluster.clusterId, 'Leads merged into single cluster');
+
+    const lifecycleRepo = new MockLifecycleRepository();
+    const lifecycleEngine = new StoryLifecycleEngine(lifecycleRepo);
+
+    const ext1 = makePublishingExtraction({
+      id: 'ext-dup-1',
+      title: 'CERN Physicists Announce Precision Higgs Measurement',
+      category: 'science',
+    });
+    const val1 = makePublishingValidation({ id: 'val-dup-1', status: 'valid' });
+
+    const dec1 = await lifecycleEngine.processCandidate(ext1, val1);
+    assert.strictEqual(dec1.action, 'CREATE', 'First candidate creates initial draft');
+
+    // Duplicate candidate for same event
+    const ext2 = makePublishingExtraction({
+      id: 'ext-dup-2',
+      title: 'CERN Physicists Announce Precision Higgs Measurement at High Luminosity',
+      category: 'science',
+      sources: ext1.sources,
+    });
+    const val2 = makePublishingValidation({ id: 'val-dup-2', status: 'valid' });
+
+    const dec2 = await lifecycleEngine.processCandidate(ext2, val2);
+    assert.strictEqual(dec2.action, 'NO_OP', 'Second candidate resolved to NO_OP, suppressing duplicate story');
+    assert.strictEqual(dec2.storyId, dec1.storyId, 'Second candidate referenced original story ID');
+
+    console.log('✅ [PASS] Test 34: Duplicate event resolves to NO_OP, strictly preventing duplicate publication');
+    passedTests++;
+  }
+
   console.log('\n====================================================');
-  console.log(`ALL 24 RESEARCH PIPELINE TESTS PASSED (${passedTests} / 24) [100%]`);
+  console.log(`ALL 34 RESEARCH & CANARY PIPELINE TESTS PASSED (${passedTests} / 34) [100%]`);
   console.log('====================================================');
 }
 

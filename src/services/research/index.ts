@@ -16,3 +16,5 @@ export * from './EvidenceSufficiencyEvaluator';
 export * from './ResearchArticleSynthesizer';
 export * from './ResearchQueueService';
 export * from './ShadowPipelineRunner';
+export * from './ResearchCanaryService';
+

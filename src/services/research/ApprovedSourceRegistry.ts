@@ -232,6 +232,13 @@ export class ApprovedSourceRegistry {
     return Array.from(this.sourcesMap.values()).filter((s) => s.is_official && s.is_active);
   }
 
+  public getSourcesByCategory(category: string): ApprovedSource[] {
+    const norm = category.trim().toLowerCase();
+    return this.getApprovedSources({ activeOnly: true }).filter((s) =>
+      s.category_hints.some((c) => c.toLowerCase() === norm)
+    );
+  }
+
   public registerSource(source: ApprovedSource): void {
     this.sourcesMap.set(source.source_id, { ...source });
   }

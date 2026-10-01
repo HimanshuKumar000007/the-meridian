@@ -140,6 +140,7 @@ export interface ResearchArticleDraft {
   preservesConflicts: boolean;
   usedFactsCount: number;
   nvidiaDurationMs: number;
+  nvidiaModel?: string;
   tokensUsed?: number;
   rawCandidate: ExtractedNewsCandidate;
 }

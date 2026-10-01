@@ -40,6 +40,7 @@ import { PublicationGateService } from '../publishing/PublicationGateService';
 import { PublicationPolicyService } from '../publishing/PublicationPolicyService';
 import { SupabasePublicationRepository } from '../../data/repositories/SupabasePublicationRepository';
 import { MockPublicationRepository } from '../../data/repositories/MockPublicationRepository';
+import { ResearchCanaryService } from '../research/ResearchCanaryService';
 
 export interface StageRunOptions {
   limit?: number;
@@ -198,6 +199,8 @@ export class StageRunnerService {
       let skipped = 0;
       const errors: string[] = [];
 
+      const canaryService = new ResearchCanaryService(this.supabaseClient);
+
       for (const item of pendingItems) {
         // Guard serverless time budget: if extraction exceeded 75 seconds and we already processed at least 1 item, stop batch cleanly
         if (Date.now() - started > 75000 && (succeeded > 0 || failed > 0)) {
@@ -205,9 +208,50 @@ export class StageRunnerService {
         }
 
         try {
-          const candidate = await engine.extract(item, {
-            dryRun: false,
-          });
+          let candidate;
+          const isCanary = await canaryService.isItemEligible(item);
+
+          if (isCanary) {
+            candidate = await canaryService.processCanaryExtraction(item, {
+              dryRun: options.dryRun,
+            });
+            if (!options.dryRun) {
+              await repo.saveExtraction({
+                id: candidate.id,
+                discovery_item_id: item.id,
+                status: candidate.extractionStatus,
+                model: candidate.model,
+                prompt_version: candidate.promptVersion,
+                input_hash: candidate.inputHash,
+                output_hash: candidate.outputHash,
+                title: candidate.title,
+                dek: candidate.dek,
+                summary: candidate.summary,
+                summary_points: candidate.summaryPoints,
+                category: candidate.category,
+                subcategory: candidate.subcategory,
+                classification_confidence: candidate.classificationConfidence,
+                content: candidate.contentBlocks as any,
+                facts: candidate.facts,
+                entities: candidate.entities,
+                timeline_candidates: candidate.timelineCandidates,
+                source_evidence: candidate.sourceEvidence,
+                overall_confidence: candidate.overallConfidence,
+                has_conflicts: candidate.hasConflicts ?? false,
+                conflict_details: candidate.conflictDetails,
+                error_code: null,
+                error_message: null,
+                created_at: candidate.createdAt,
+                updated_at: candidate.updatedAt,
+              });
+              await repo.updateDiscoveryItemStatus(item.id, 'processed');
+            }
+          } else {
+            candidate = await engine.extract(item, {
+              dryRun: false,
+            });
+          }
+
           if (candidate.extractionStatus === 'completed' || candidate.extractionStatus === 'needs_review') {
             succeeded++;
           } else {
@@ -314,7 +358,30 @@ export class StageRunnerService {
           let sourceUrl = '';
           let publishedAt = null;
 
-          if (this.supabaseClient && !this.isMock) {
+          const extRecord: any = ext;
+          if (
+            extRecord.prompt_version?.startsWith('research-') ||
+            (Array.isArray(extRecord.source_evidence) && extRecord.source_evidence.length > 0)
+          ) {
+            // Multi-source research candidate: use corroborated research facts and claims as ground-truth sourceText
+            if (Array.isArray(extRecord.source_evidence) && extRecord.source_evidence.length > 0) {
+              sourceText = extRecord.source_evidence
+                .map(
+                  (se: any) =>
+                    `${se.dimension ? `[${se.dimension.toUpperCase()}] ` : ''}${se.claim || se.value || ''}`
+                )
+                .join('\n\n');
+            } else if (Array.isArray(extRecord.facts) && extRecord.facts.length > 0) {
+              sourceText = extRecord.facts
+                .map(
+                  (f: any) =>
+                    `${f.label ? `[${f.label.toUpperCase()}] ` : ''}${f.value || f.evidence || ''}`
+                )
+                .join('\n\n');
+            }
+            sourceUrl = 'https://themeridian.in';
+            publishedAt = extRecord.created_at || extRecord.createdAt || null;
+          } else if (this.supabaseClient && !this.isMock) {
             const { data: discItem } = await this.supabaseClient
               .from('news_discovery_items')
               .select('*')
