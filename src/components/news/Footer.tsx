@@ -31,7 +31,7 @@ export const Footer: React.FC<FooterProps> = ({ onSelectCategory, onOpenPolicyMo
         </div>
 
         {/* 4 Multi-Column Editorial Navigation */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8 mb-12">
           {/* Column 1: News Sections */}
           <div>
             <h3 className="font-semibold text-white uppercase tracking-wider text-[11px] mb-3">

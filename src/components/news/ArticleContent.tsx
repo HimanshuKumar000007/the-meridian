@@ -26,7 +26,7 @@ export const ArticleContent: React.FC<ArticleContentProps> = ({ blocks, classNam
               return (
                 <p
                   key={index}
-                  className="first-letter:text-5xl sm:first-letter:text-6xl first-letter:font-serif first-letter:font-bold first-letter:float-left first-letter:mr-3.5 first-letter:mt-1 first-letter:text-stone-900 first-letter:leading-none text-stone-900 text-[18px] sm:text-[19px] leading-[1.8]"
+                  className="first-letter:text-4xl sm:first-letter:text-6xl first-letter:font-serif first-letter:font-bold first-letter:float-left first-letter:mr-3 sm:first-letter:mr-3.5 first-letter:mt-1 first-letter:text-stone-900 first-letter:leading-none text-stone-900 text-[17px] sm:text-[19px] leading-[1.8]"
                 >
                   {block.text}
                 </p>

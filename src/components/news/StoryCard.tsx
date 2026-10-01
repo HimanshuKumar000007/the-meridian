@@ -96,7 +96,7 @@ export const StoryCard: React.FC<StoryCardProps> = ({
           )}
         </div>
 
-        <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-serif font-semibold text-stone-900 leading-[1.15] mb-3 group-hover:text-red-950 transition-colors duration-150 [text-wrap:balance]">
+        <h1 className="text-[28px] sm:text-[36px] md:text-[38px] lg:text-[42px] font-serif font-semibold text-stone-900 leading-[1.12] mb-3 group-hover:text-red-950 transition-colors duration-150 [text-wrap:balance]">
           {story.title}
         </h1>
 

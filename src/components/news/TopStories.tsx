@@ -26,8 +26,8 @@ export const TopStories: React.FC<TopStoriesProps> = ({ stories, onSelectStory }
           </span>
         </div>
 
-        {/* 4-Card Desktop Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
+        {/* 4-Card Desktop Grid — 1 col phone, 2 col tablet, 4 col desktop */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-8">
           {stories.slice(0, 4).map((story, index) => (
             <div
               key={story.id}

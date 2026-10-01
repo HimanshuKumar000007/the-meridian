@@ -49,14 +49,14 @@ export const StoryHeader: React.FC<StoryHeaderProps> = ({
         </span>
       </div>
 
-      {/* 3. Primary Headline (Desktop 52–68px, Mobile 34–42px, Balanced line wrapping) */}
-      <h1 className="font-serif text-[32px] sm:text-[44px] md:text-[54px] lg:text-[62px] font-bold text-stone-900 leading-[1.08] tracking-tight mb-5 max-w-5xl [text-wrap:balance]">
+      {/* 3. Primary Headline (Phone: 30px → sm: 42px → md: 52px → lg: 62px) */}
+      <h1 className="font-serif text-[30px] sm:text-[42px] md:text-[52px] lg:text-[62px] font-bold text-stone-900 leading-[1.08] tracking-tight mb-4 sm:mb-5 max-w-5xl [text-wrap:balance]">
         {story.title}
       </h1>
 
-      {/* 4. Editorial Deck / Summary (20-24px, calm and clear) */}
+      {/* 4. Editorial Deck / Summary (Phone: 17px → sm: 20px → lg: 22px) */}
       {(story.dek || story.summary) && (
-        <p className="font-sans text-lg sm:text-xl lg:text-[22px] text-stone-600 leading-relaxed max-w-4xl mb-6 font-normal">
+        <p className="font-sans text-[17px] sm:text-xl lg:text-[22px] text-stone-600 leading-relaxed max-w-4xl mb-5 sm:mb-6 font-normal">
           {story.dek || story.summary}
         </p>
       )}

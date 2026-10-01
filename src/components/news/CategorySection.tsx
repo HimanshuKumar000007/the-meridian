@@ -96,7 +96,7 @@ export const CategorySection: React.FC<CategorySectionProps> = ({
 
         {/* 2. GAMING LAYOUT: 3 Equal Visual Cards */}
         {layoutType === 'gaming-grid' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 lg:gap-8">
             {stories.slice(0, 3).map((story, idx) => (
               <div
                 key={story.id}
@@ -145,7 +145,7 @@ export const CategorySection: React.FC<CategorySectionProps> = ({
 
         {/* 4. BUSINESS LAYOUT: Typography-Led Layout (No stock trading chart clutter) */}
         {layoutType === 'business-columns' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 lg:gap-8">
             {stories.slice(0, 3).map((story, idx) => (
               <div
                 key={story.id}

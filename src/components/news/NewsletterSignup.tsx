@@ -47,10 +47,10 @@ export const NewsletterSignup: React.FC = () => {
         {!submitted ? (
           <form
             onSubmit={handleSubmit}
-            className="flex flex-col sm:flex-row items-center justify-center gap-2 max-w-md mx-auto"
+            className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2 max-w-md mx-auto"
             noValidate
           >
-            <div className="w-full relative">
+            <div className="w-full flex flex-col gap-1">
               <label htmlFor="newsletter-email" className="sr-only">
                 Email address
               </label>
@@ -67,7 +67,7 @@ export const NewsletterSignup: React.FC = () => {
                 className="w-full px-4 py-3 bg-stone-900 border border-stone-700 text-white placeholder:text-stone-500 font-sans text-sm focus:outline-none focus:border-stone-400 focus:ring-1 focus:ring-stone-400 transition-colors"
               />
               {error && (
-                <p className="text-xs text-red-400 font-sans text-left mt-1.5 absolute -bottom-5 left-0">
+                <p className="text-xs text-red-400 font-sans text-left">
                   {error}
                 </p>
               )}

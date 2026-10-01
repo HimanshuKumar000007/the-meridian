@@ -36,8 +36,13 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
-  // Current formatted date
-  const todayFormatted = 'Saturday, September 26, 2026';
+  // Current formatted date — live, not hardcoded
+  const todayFormatted = new Date().toLocaleDateString('en-GB', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
 
   return (
     <header className="w-full bg-[#FAF9F6] border-b border-hairline sticky top-0 z-30 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
