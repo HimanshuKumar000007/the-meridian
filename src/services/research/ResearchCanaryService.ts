@@ -293,7 +293,63 @@ export class ResearchCanaryService {
     }
 
     // 4. Synthesize Original Article via NVIDIA AI (British English, >= 700 substantive words)
-    const draft = await this.synthesizer.synthesize(evidenceSet);
+    let draft: any;
+    try {
+      draft = await this.synthesizer.synthesize(evidenceSet);
+    } catch (synthErr: any) {
+      const isTimeout = synthErr.message?.includes('timed out');
+      this.recordTelemetry({
+        eventId: clusterId,
+        discoveryItemId: item.id,
+        title: item.title,
+        category: cluster.category,
+        sourcesUsed: evidenceSet.sourcesConsulted.map((s) => s.sourceName),
+        sourceCount: evidenceSet.sourcesConsulted.length,
+        evidenceCount: evidenceSet.facts.length,
+        researchDurationMs,
+        nvidiaModel: 'nvidia-llm',
+        nvidiaDurationMs: Date.now() - researchStart,
+        articleWordCount: 0,
+        wordCountPasses700: false,
+        timestamp: new Date().toISOString(),
+        status: isTimeout ? 'held' : 'error',
+        error: synthErr.message,
+      });
+
+      const nowIso = new Date().toISOString();
+      return {
+        id: `ext-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        discoveryItemId: item.id,
+        title: item.title,
+        dek: '',
+        summary: `Synthesis deferred: ${synthErr.message}`,
+        summaryPoints: [],
+        category: cluster.category,
+        subcategory: 'general',
+        classificationConfidence: 0.5,
+        topics: [],
+        status: 'normal',
+        publishedAt: nowIso,
+        entities: [],
+        facts: [],
+        timelineCandidates: [],
+        contentBlocks: [],
+        sources: evidenceSet.sourcesConsulted.map((s) => ({ name: s.sourceName, url: s.url })),
+        heroImage: null,
+        sourceEvidence: [],
+        overallConfidence: 0.1,
+        confidenceLevel: 'low',
+        hasConflicts: false,
+        conflictDetails: synthErr.message,
+        extractionStatus: 'needs_review',
+        model: 'nvidia-llm-fallback',
+        promptVersion: 'research-canary-v1',
+        inputHash: 'hash-error',
+        outputHash: 'hash-error',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+    }
 
     // 5. Strict 700-word body verification
     const measuredWords = countArticleBodyWords(draft.contentBlocks as any);
