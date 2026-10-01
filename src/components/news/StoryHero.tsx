@@ -25,7 +25,7 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
   if (!heroImage?.url || imgFailed) {
     return (
       <figure className={`w-full my-6 sm:my-8 ${className}`}>
-        <div className="w-full aspect-[16/9] bg-stone-100 border border-hairline flex flex-col items-center justify-center p-6 text-center text-stone-400">
+        <div className="w-full aspect-[16/9] max-h-[360px] sm:max-h-[440px] lg:max-h-[520px] bg-stone-100 border border-hairline flex flex-col items-center justify-center p-6 text-center text-stone-400">
           <Newspaper className="w-10 h-10 mb-3 opacity-40 text-stone-500" />
           <span className="text-xs uppercase font-sans font-semibold tracking-widest text-stone-500">
             {category} Coverage
@@ -40,7 +40,7 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
 
   return (
     <figure className={`w-full my-6 sm:my-8 ${className}`}>
-      <div className="relative overflow-hidden bg-stone-100 aspect-[16/9] w-full border border-hairline-subtle shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
+      <div className="relative overflow-hidden bg-stone-100 aspect-[16/9] w-full max-h-[360px] sm:max-h-[440px] lg:max-h-[520px] border border-hairline-subtle shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
         <img
           src={heroImage.url}
           alt={heroImage.alt || title}

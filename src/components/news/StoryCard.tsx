@@ -47,7 +47,7 @@ export const StoryCard: React.FC<StoryCardProps> = ({
     if (!showImage || !story.image) return null;
 
     return (
-      <div className={`relative overflow-hidden bg-stone-100 ${aspectClass} w-full`}>
+      <div className={`relative overflow-hidden bg-stone-100 ${aspectClass} w-full max-h-[360px] sm:max-h-[420px] lg:max-h-[480px]`}>
         {!imgFailed ? (
           <img
             src={story.image}
