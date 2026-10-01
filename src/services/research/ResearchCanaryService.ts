@@ -80,7 +80,7 @@ export class ResearchCanaryService {
    * Checks whether the research pipeline is currently configured in LIVE CANARY mode.
    */
   public isCanaryActive(): boolean {
-    const mode = (process.env.RESEARCH_PIPELINE_MODE || '').trim().toLowerCase();
+    const mode = (process.env.RESEARCH_PIPELINE_MODE || 'canary').trim().toLowerCase();
     return mode === 'canary';
   }
 

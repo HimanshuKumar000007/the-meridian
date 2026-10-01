@@ -9746,7 +9746,7 @@ var ResearchCanaryService = class _ResearchCanaryService {
    * Checks whether the research pipeline is currently configured in LIVE CANARY mode.
    */
   isCanaryActive() {
-    const mode = (process.env.RESEARCH_PIPELINE_MODE || "").trim().toLowerCase();
+    const mode = (process.env.RESEARCH_PIPELINE_MODE || "canary").trim().toLowerCase();
     return mode === "canary";
   }
   /**
