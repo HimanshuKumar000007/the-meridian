@@ -4895,7 +4895,11 @@ var DEFAULT_PUBLICATION_POLICY = {
     "hardware",
     "science",
     "space",
-    "ai"
+    "ai",
+    "world",
+    "business",
+    "entertainment",
+    "cybersecurity"
   ],
   reviewRequiredCategories: [
     "politics",
@@ -4904,7 +4908,6 @@ var DEFAULT_PUBLICATION_POLICY = {
     "crime",
     "health",
     "financial-markets",
-    "business",
     "disasters"
   ],
   automatedPublishingEnabled: process.env.AUTOMATION_PUBLISHING_ENABLED === "false" || process.env.AUTOMATION_PUBLISHING_ENABLED === "0" || process.env.AUTOMATED_PUBLISHING_ENABLED === "false" || process.env.AUTOMATED_PUBLISHING_ENABLED === "0" ? false : true,
@@ -4916,13 +4919,16 @@ var DEFAULT_PUBLICATION_POLICY = {
     science: true,
     space: true,
     ai: true,
+    world: true,
+    business: true,
+    entertainment: true,
+    cybersecurity: true,
     politics: false,
     elections: false,
     war: false,
     crime: false,
     health: false,
     "financial-markets": false,
-    business: false,
     disasters: false
   },
   blockedSources: [],
