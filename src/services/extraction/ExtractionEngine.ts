@@ -175,13 +175,16 @@ export class ExtractionEngine {
       try {
         parsedObj = JSON.parse(rawJson);
       } catch (parseErr: any) {
-        const isTruncated = parseErr.message?.includes('Unexpected end') ||
+        const isTruncated =
+          parseErr.message?.includes('Unexpected end') ||
           parseErr.message?.includes('Unterminated') ||
-          parseErr.message?.includes('end of JSON');
+          parseErr.message?.includes('end of JSON') ||
+          parseErr.message?.includes("Expected ','") ||
+          parseErr.message?.includes("Expected double-quoted") ||
+          parseErr.message?.includes("in JSON at position");
 
         if (isTruncated) {
           // Stage 1: Structural repair — close unclosed brackets/braces/strings.
-          // Handles the common case where max_tokens cut the response mid-object.
           const repaired = this.repairTruncatedJson(rawJson);
           let repairSucceeded = false;
           if (repaired) {
@@ -195,28 +198,50 @@ export class ExtractionEngine {
 
           if (!repairSucceeded) {
             // Stage 2: Retry with reduced max_tokens + brevity instruction.
-            // A second full-size request would also be truncated — ask for shorter output.
-            const brevityRetry = await this.llmProvider.extractStructuredNews(
-              systemPrompt,
-              `Your previous response was truncated mid-JSON (hit token limit). ` +
-              `Produce a SHORTER but COMPLETE and valid JSON response. ` +
-              `Keep contentBlocks to 4-6 paragraphs maximum. Keep summary under 3 sentences. ` +
-              `Ensure all arrays and objects are properly closed. ` +
-              `Source:\n\n${userPrompt}`,
-              options.model,
-              1200
-            );
-            parsedObj = JSON.parse(brevityRetry.rawJson);
+            try {
+              const brevityRetry = await this.llmProvider.extractStructuredNews(
+                systemPrompt,
+                `Your previous response was truncated mid-JSON (hit token limit). ` +
+                `Produce a SHORTER but COMPLETE and valid JSON response. ` +
+                `Keep contentBlocks to 4-6 paragraphs maximum. Keep summary under 3 sentences. ` +
+                `Ensure all arrays and objects are properly closed. ` +
+                `Source:\n\n${userPrompt}`,
+                options.model,
+                1200
+              );
+              try {
+                parsedObj = JSON.parse(brevityRetry.rawJson);
+              } catch {
+                const rep = this.repairTruncatedJson(brevityRetry.rawJson);
+                if (rep) parsedObj = JSON.parse(rep);
+              }
+            } catch {
+              // Brevity retry failed
+            }
           }
         } else {
           // Non-truncation parse error — standard correction retry
-          const retryCorrection = await this.llmProvider.extractStructuredNews(
-            systemPrompt,
-            `The previous response was malformed JSON: ${parseErr.message}. Output ONLY valid JSON matching the schema for the following source:\n\n${userPrompt}`,
-            options.model
-          );
-          parsedObj = JSON.parse(retryCorrection.rawJson);
+          try {
+            const retryCorrection = await this.llmProvider.extractStructuredNews(
+              systemPrompt,
+              `The previous response was malformed JSON: ${parseErr.message}. Output ONLY valid JSON matching the schema for the following source:\n\n${userPrompt}`,
+              options.model
+            );
+            try {
+              parsedObj = JSON.parse(retryCorrection.rawJson);
+            } catch {
+              const rep = this.repairTruncatedJson(retryCorrection.rawJson);
+              if (rep) parsedObj = JSON.parse(rep);
+            }
+          } catch {
+            // Correction retry failed
+          }
         }
+      }
+
+      if (!parsedObj || typeof parsedObj !== 'object') {
+        errorCode = 'MALFORMED_OUTPUT';
+        extractionError = `Failed to parse valid structured JSON from LLM: ${rawJson.slice(0, 200)}`;
       }
 
 

@@ -88,7 +88,7 @@ export class ResearchCanaryService {
    * Returns the single approved canary category (default: 'science').
    */
   public getCanaryCategory(): string {
-    return (process.env.RESEARCH_CANARY_CATEGORY || 'science').trim().toLowerCase();
+    return (process.env.RESEARCH_CANARY_CATEGORY || 'all').trim().toLowerCase();
   }
 
   /**
@@ -152,8 +152,9 @@ export class ResearchCanaryService {
       return false;
     }
 
+    const allowedCategory = this.getCanaryCategory();
     const itemCategory = (item.categoryHint || (item as any).category || '').trim().toLowerCase();
-    if (itemCategory !== this.getCanaryCategory()) {
+    if (allowedCategory !== 'all' && itemCategory !== allowedCategory) {
       return false;
     }
 

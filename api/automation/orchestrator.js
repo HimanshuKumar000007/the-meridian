@@ -2952,7 +2952,7 @@ var ExtractionEngine = class {
       try {
         parsedObj = JSON.parse(rawJson);
       } catch (parseErr) {
-        const isTruncated = parseErr.message?.includes("Unexpected end") || parseErr.message?.includes("Unterminated") || parseErr.message?.includes("end of JSON");
+        const isTruncated = parseErr.message?.includes("Unexpected end") || parseErr.message?.includes("Unterminated") || parseErr.message?.includes("end of JSON") || parseErr.message?.includes("Expected ','") || parseErr.message?.includes("Expected double-quoted") || parseErr.message?.includes("in JSON at position");
         if (isTruncated) {
           const repaired = this.repairTruncatedJson(rawJson);
           let repairSucceeded = false;
@@ -2964,26 +2964,46 @@ var ExtractionEngine = class {
             }
           }
           if (!repairSucceeded) {
-            const brevityRetry = await this.llmProvider.extractStructuredNews(
-              systemPrompt,
-              `Your previous response was truncated mid-JSON (hit token limit). Produce a SHORTER but COMPLETE and valid JSON response. Keep contentBlocks to 4-6 paragraphs maximum. Keep summary under 3 sentences. Ensure all arrays and objects are properly closed. Source:
+            try {
+              const brevityRetry = await this.llmProvider.extractStructuredNews(
+                systemPrompt,
+                `Your previous response was truncated mid-JSON (hit token limit). Produce a SHORTER but COMPLETE and valid JSON response. Keep contentBlocks to 4-6 paragraphs maximum. Keep summary under 3 sentences. Ensure all arrays and objects are properly closed. Source:
 
 ${userPrompt}`,
-              options.model,
-              1200
-            );
-            parsedObj = JSON.parse(brevityRetry.rawJson);
+                options.model,
+                1200
+              );
+              try {
+                parsedObj = JSON.parse(brevityRetry.rawJson);
+              } catch {
+                const rep = this.repairTruncatedJson(brevityRetry.rawJson);
+                if (rep) parsedObj = JSON.parse(rep);
+              }
+            } catch {
+            }
           }
         } else {
-          const retryCorrection = await this.llmProvider.extractStructuredNews(
-            systemPrompt,
-            `The previous response was malformed JSON: ${parseErr.message}. Output ONLY valid JSON matching the schema for the following source:
+          try {
+            const retryCorrection = await this.llmProvider.extractStructuredNews(
+              systemPrompt,
+              `The previous response was malformed JSON: ${parseErr.message}. Output ONLY valid JSON matching the schema for the following source:
 
 ${userPrompt}`,
-            options.model
-          );
-          parsedObj = JSON.parse(retryCorrection.rawJson);
+              options.model
+            );
+            try {
+              parsedObj = JSON.parse(retryCorrection.rawJson);
+            } catch {
+              const rep = this.repairTruncatedJson(retryCorrection.rawJson);
+              if (rep) parsedObj = JSON.parse(rep);
+            }
+          } catch {
+          }
         }
+      }
+      if (!parsedObj || typeof parsedObj !== "object") {
+        errorCode = "MALFORMED_OUTPUT";
+        extractionError = `Failed to parse valid structured JSON from LLM: ${rawJson.slice(0, 200)}`;
       }
       if (parsedObj && typeof parsedObj === "object") {
         if (typeof parsedObj.category === "string") {
@@ -9991,7 +10011,7 @@ var ResearchCanaryService = class _ResearchCanaryService {
    * Returns the single approved canary category (default: 'science').
    */
   getCanaryCategory() {
-    return (process.env.RESEARCH_CANARY_CATEGORY || "science").trim().toLowerCase();
+    return (process.env.RESEARCH_CANARY_CATEGORY || "all").trim().toLowerCase();
   }
   /**
    * Returns the maximum allowed publications for the live canary (strictly 5).
@@ -10041,8 +10061,9 @@ var ResearchCanaryService = class _ResearchCanaryService {
     if (!this.isCanaryActive()) {
       return false;
     }
+    const allowedCategory = this.getCanaryCategory();
     const itemCategory = (item.categoryHint || item.category || "").trim().toLowerCase();
-    if (itemCategory !== this.getCanaryCategory()) {
+    if (allowedCategory !== "all" && itemCategory !== allowedCategory) {
       return false;
     }
     const itemDate = new Date(item.discoveredAt || item.publishedAt || 0).getTime();
