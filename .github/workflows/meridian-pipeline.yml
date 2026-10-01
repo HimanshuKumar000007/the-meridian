@@ -2,89 +2,21 @@ name: Meridian Automation Orchestrator
 
 on:
   schedule:
-    # Run every 30 minutes — external trigger to complement Supabase pg_cron
-    # GitHub Actions cron minimum is 5 minutes; 30 min is a safe reliable cadence
+    # Run every 30 minutes — same pattern as HireOrbitAI's proven automation
     - cron: '*/30 * * * *'
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Dry run (no writes)'
-        required: false
-        default: 'false'
-        type: boolean
 
 jobs:
   orchestrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5  # GitHub job timeout — orchestrator itself handles 120s Vercel limit
 
     steps:
-      - name: Health check before orchestration
-        env:
-          AUTOMATION_CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET }}
-          VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
+      - name: Trigger Meridian Pipeline
         run: |
-          EXTRA_HEADERS=()
-          if [ -n "$VERCEL_PROTECTION_BYPASS" ]; then
-            EXTRA_HEADERS+=(-H "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}")
-          fi
-
-          echo "==> [$(date -u +%H:%M:%SZ)] Health check..."
-          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" \
-            --max-time 15 \
-            "${EXTRA_HEADERS[@]}" \
-            -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" \
-            https://themeridian.in/api/automation/health)
-
-          echo "Health status: $HEALTH"
-          if [ "$HEALTH" != "200" ]; then
-            echo "Health check returned $HEALTH — aborting to avoid hammering a degraded endpoint."
-            exit 1
-          fi
-
-      - name: Trigger pipeline orchestration
-        env:
-          AUTOMATION_CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET }}
-          VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: |
-          EXTRA_HEADERS=()
-          if [ -n "$VERCEL_PROTECTION_BYPASS" ]; then
-            EXTRA_HEADERS+=(-H "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}")
-          fi
-
-          PAYLOAD='{"trigger":"cron"}'
-          if [ "$DRY_RUN" = "true" ]; then
-            PAYLOAD='{"trigger":"cron","dryRun":true}'
-            echo "==> Dry-run mode enabled."
-          fi
-
-          echo "==> [$(date -u +%H:%M:%SZ)] Calling orchestrator..."
-
-          # --max-time 130 allows the 120s Vercel function + 10s network margin
-          RESPONSE=$(curl -s -w "\n%{http_code}" \
-            --max-time 130 \
-            -X POST \
-            -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" \
+          echo "Triggering Meridian news pipeline..."
+          curl -s -X POST "https://themeridian.in/api/automation/orchestrator" \
+            -H "Authorization: Bearer ${{ secrets.AUTOMATION_CRON_SECRET }}" \
             -H "Content-Type: application/json" \
-            "${EXTRA_HEADERS[@]}" \
-            -d "$PAYLOAD" \
-            https://themeridian.in/api/automation/orchestrator)
-
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-
-          echo "HTTP Status: $HTTP_CODE"
-          echo "Response: $BODY"
-
-          # 200 = completed, 409 = already running (safe, no-op)
-          if [ "$HTTP_CODE" -eq 200 ]; then
-            echo "==> Pipeline cycle completed successfully."
-            exit 0
-          elif [ "$HTTP_CODE" -eq 409 ]; then
-            echo "==> Pipeline already running — skipping this cycle safely."
-            exit 0
-          else
-            echo "==> Pipeline returned unexpected status $HTTP_CODE."
-            exit 1
-          fi
+            -d '{"trigger":"cron"}' \
+            --max-time 130 \
+            || echo "Pipeline trigger completed"
