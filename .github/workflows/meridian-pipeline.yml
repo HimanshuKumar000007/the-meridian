@@ -2,53 +2,89 @@ name: Meridian Automation Orchestrator
 
 on:
   schedule:
-    # Secondary backup / heartbeat trigger (primary scheduler is Supabase pg_cron at */10)
-    - cron: '0 * * * *'
+    # Run every 30 minutes — external trigger to complement Supabase pg_cron
+    # GitHub Actions cron minimum is 5 minutes; 30 min is a safe reliable cadence
+    - cron: '*/30 * * * *'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no writes)'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
   orchestrate:
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # GitHub job timeout — orchestrator itself handles 120s Vercel limit
 
     steps:
-      - name: Trigger Meridian Orchestrator (Fallback / Heartbeat)
+      - name: Health check before orchestration
         env:
           AUTOMATION_CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET }}
           VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
         run: |
-          echo "Starting automated news pipeline orchestration fallback trigger..."
-
           EXTRA_HEADERS=()
           if [ -n "$VERCEL_PROTECTION_BYPASS" ]; then
             EXTRA_HEADERS+=(-H "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}")
           fi
 
-          echo "Probing /api/automation/health on canonical domain..."
-          curl -s -i "${EXTRA_HEADERS[@]}" -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" https://themeridian.in/api/automation/health
+          echo "==> [$(date -u +%H:%M:%SZ)] Health check..."
+          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 15 \
+            "${EXTRA_HEADERS[@]}" \
+            -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" \
+            https://themeridian.in/api/automation/health)
 
+          echo "Health status: $HEALTH"
+          if [ "$HEALTH" != "200" ]; then
+            echo "Health check returned $HEALTH — aborting to avoid hammering a degraded endpoint."
+            exit 1
+          fi
+
+      - name: Trigger pipeline orchestration
+        env:
+          AUTOMATION_CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET }}
+          VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          EXTRA_HEADERS=()
+          if [ -n "$VERCEL_PROTECTION_BYPASS" ]; then
+            EXTRA_HEADERS+=(-H "x-vercel-protection-bypass: ${VERCEL_PROTECTION_BYPASS}")
+          fi
+
+          PAYLOAD='{"trigger":"cron"}'
+          if [ "$DRY_RUN" = "true" ]; then
+            PAYLOAD='{"trigger":"cron","dryRun":true}'
+            echo "==> Dry-run mode enabled."
+          fi
+
+          echo "==> [$(date -u +%H:%M:%SZ)] Calling orchestrator..."
+
+          # --max-time 130 allows the 120s Vercel function + 10s network margin
           RESPONSE=$(curl -s -w "\n%{http_code}" \
-            --max-time 60 \
+            --max-time 130 \
             -X POST \
             -H "Authorization: Bearer ${AUTOMATION_CRON_SECRET}" \
             -H "Content-Type: application/json" \
             "${EXTRA_HEADERS[@]}" \
-            -d '{"trigger":"cron"}' \
+            -d "$PAYLOAD" \
             https://themeridian.in/api/automation/orchestrator)
 
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
 
-          echo "Response HTTP Status: $HTTP_CODE"
-          echo "Response Body: $BODY"
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
 
-          # 200 OK (Completed/Partial) or 409 Conflict (RUN_ALREADY_IN_PROGRESS) are safe success states
+          # 200 = completed, 409 = already running (safe, no-op)
           if [ "$HTTP_CODE" -eq 200 ]; then
-            echo "Orchestrator completed cycle successfully."
+            echo "==> Pipeline cycle completed successfully."
             exit 0
           elif [ "$HTTP_CODE" -eq 409 ]; then
-            echo "Orchestrator run already in progress (safe concurrency no-op)."
+            echo "==> Pipeline already running — skipping this cycle safely."
             exit 0
           else
-            echo "Orchestrator failed with HTTP status $HTTP_CODE."
+            echo "==> Pipeline returned unexpected status $HTTP_CODE."
             exit 1
           fi
