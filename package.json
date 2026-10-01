@@ -31,7 +31,8 @@
     "media:test": "tsx test-media-engine.ts",
     "notification:test": "tsx test-operator-notifications.ts",
     "policy:test": "tsx test-article-length-policy.ts",
-    "operations:test": "tsx test-operations-dashboard.ts"
+    "operations:test": "tsx test-operations-dashboard.ts",
+    "research:test": "tsx test-research-pipeline.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

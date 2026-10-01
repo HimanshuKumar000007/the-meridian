@@ -660,6 +660,143 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({ onNavi
                 </div>
               </div>
             </div>
+
+            {/* Research & Multi-Source Observation Section */}
+            {overview.research && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* 1. Research Telemetry */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 space-y-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-2">
+                    <Radio className="w-4 h-4 text-emerald-400" />
+                    <span>Research Architecture (Observation Mode)</span>
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
+                      <div className="text-xs text-neutral-500">Research Pending</div>
+                      <div className="text-lg font-bold font-mono text-white mt-0.5">
+                        {overview.research.researchPending}
+                      </div>
+                    </div>
+                    <div className="bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
+                      <div className="text-xs text-neutral-500">Research Completed</div>
+                      <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
+                        {overview.research.researchCompleted}
+                      </div>
+                    </div>
+                    <div className="bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
+                      <div className="text-xs text-neutral-500">Insufficient Evidence</div>
+                      <div className="text-lg font-bold font-mono text-amber-400 mt-0.5">
+                        {overview.research.insufficientEvidence}
+                      </div>
+                    </div>
+                    <div className="bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
+                      <div className="text-xs text-neutral-500">Blocked Sources</div>
+                      <div className="text-lg font-bold font-mono text-red-400 mt-0.5">
+                        {overview.research.blockedSources}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-xs pt-2 border-t border-neutral-800">
+                    <div className="flex justify-between py-1">
+                      <span className="text-neutral-400">Research Failure Rate</span>
+                      <span className="font-mono text-neutral-300">{overview.research.researchFailureRate}%</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-neutral-400">Avg Research Duration</span>
+                      <span className="font-mono text-neutral-300">
+                        {(overview.research.averageResearchDurationMs / 1000).toFixed(2)}s
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-neutral-400">Source Count per Event</span>
+                      <span className="font-mono text-neutral-300">{overview.research.sourceCountPerEvent}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Multi-Source Events */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 space-y-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-cyan-400" />
+                    <span>Multi-Source Events & Corroboration</span>
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
+                      <div className="text-xs text-neutral-500">Events with 2+ Sources</div>
+                      <div className="text-lg font-bold font-mono text-cyan-400 mt-0.5">
+                        {overview.research.eventsWith2PlusSources}
+                      </div>
+                    </div>
+                    <div className="bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
+                      <div className="text-xs text-neutral-500">Official Source Backed</div>
+                      <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
+                        {overview.research.eventsWithOfficialSource}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-xs pt-2 border-t border-neutral-800">
+                    <div className="flex justify-between py-1">
+                      <span className="text-neutral-400">Source Disagreement Count</span>
+                      <span className="font-mono text-amber-400">{overview.research.sourceDisagreementCount}</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-neutral-400">Conflict Preservation Rule</span>
+                      <span className="font-mono text-emerald-400">Active (Both Preserved)</span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-neutral-400">Editorial Synthesis Mode</span>
+                      <span className="font-mono text-neutral-300">British English</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. NVIDIA AI Telemetry */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 space-y-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-purple-400" />
+                    <span>NVIDIA AI Synthesis Telemetry</span>
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
+                      <div className="text-xs text-neutral-500">Total Requests</div>
+                      <div className="text-lg font-bold font-mono text-white mt-0.5">
+                        {overview.research.nvidiaRequests}
+                      </div>
+                    </div>
+                    <div className="bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
+                      <div className="text-xs text-neutral-500">Successful Syntheses</div>
+                      <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
+                        {overview.research.nvidiaSuccess}
+                      </div>
+                    </div>
+                    <div className="bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
+                      <div className="text-xs text-neutral-500">Timeouts</div>
+                      <div className="text-lg font-bold font-mono text-amber-400 mt-0.5">
+                        {overview.research.nvidiaTimeout}
+                      </div>
+                    </div>
+                    <div className="bg-neutral-950 p-3 rounded-lg border border-neutral-800/80">
+                      <div className="text-xs text-neutral-500">Token Cost / Usage</div>
+                      <div className="text-sm font-bold font-mono text-neutral-300 mt-1">
+                        {overview.research.nvidiaCostOrTokenUsage || 'N/A'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-xs pt-2 border-t border-neutral-800">
+                    <div className="flex justify-between py-1">
+                      <span className="text-neutral-400">Avg Synthesis Duration</span>
+                      <span className="font-mono text-neutral-300">
+                        {(overview.research.nvidiaAverageDurationMs / 1000).toFixed(2)}s
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-neutral-400">Target Word Count</span>
+                      <span className="font-mono text-neutral-300">&ge; 700 Words</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

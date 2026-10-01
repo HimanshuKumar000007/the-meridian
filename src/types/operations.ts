@@ -140,6 +140,24 @@ export interface PerformanceMetrics {
   timeoutCount: number;
 }
 
+export interface ResearchMonitorMetrics {
+  researchPending: number;
+  researchCompleted: number;
+  insufficientEvidence: number;
+  blockedSources: number;
+  researchFailureRate: number;
+  averageResearchDurationMs: number;
+  sourceCountPerEvent: number;
+  eventsWith2PlusSources: number;
+  eventsWithOfficialSource: number;
+  sourceDisagreementCount: number;
+  nvidiaRequests: number;
+  nvidiaSuccess: number;
+  nvidiaTimeout: number;
+  nvidiaAverageDurationMs: number;
+  nvidiaCostOrTokenUsage?: string;
+}
+
 export interface DashboardOverview {
   generatedAt: string;
   timeRange: TimeRangeOption;
@@ -154,6 +172,7 @@ export interface DashboardOverview {
   queues: QueueMetricsSummary;
   performance: PerformanceMetrics;
   recentRuns: AutomationRun[];
+  research?: ResearchMonitorMetrics;
 }
 
 export interface DashboardStoryItem {
