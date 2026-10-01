@@ -70,11 +70,11 @@ export class RssMonitorService {
         baseUrl: source.feed_url,
         country: 'Global',
         language: 'en',
-        priority: source.priority,
-        pollIntervalMinutes: source.polling_cadence_minutes,
-        categories: source.category_hints,
-        isActive: source.is_active,
-        consecutiveFailures: source.consecutive_failures,
+        priority: source.priority ?? 1,
+        pollIntervalMinutes: source.polling_cadence_minutes ?? source.pollingCadence ?? 10,
+        categories: source.category_hints ?? [source.category.toLowerCase()],
+        isActive: source.active ?? source.is_active ?? true,
+        consecutiveFailures: source.consecutive_failures ?? source.errorCount ?? 0,
       });
 
       if (fetchResult.status === 'failure' || !fetchResult.body) {
@@ -138,7 +138,7 @@ export class RssMonitorService {
           canonicalUrl,
           publishedAt,
           description: (item.description || '').trim(),
-          categoryHint: source.category_hints[0] || 'world',
+          categoryHint: (source.category_hints && source.category_hints[0]) || source.category?.toLowerCase() || 'general',
           fingerprint,
           discoveredAt: new Date().toISOString(),
           rawPayload: item.raw,

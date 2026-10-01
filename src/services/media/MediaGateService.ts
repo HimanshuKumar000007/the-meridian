@@ -18,6 +18,8 @@ import { FallbackMediaService } from './FallbackMediaService';
 import { ImageGenerationService } from './ImageGenerationService';
 import { MediaStorageService } from './MediaStorageService';
 
+import { ImageRightsService } from './ImageRightsService';
+
 export interface StoryContext {
   id: string;
   title: string;
@@ -34,6 +36,8 @@ export class MediaGateService {
   private fallbackService: FallbackMediaService;
   private generationService: ImageGenerationService;
   private storageService: MediaStorageService;
+  private imageRightsService: ImageRightsService;
+  private enforcePublisherBlacklist: boolean;
 
   constructor(options: {
     policyService?: MediaPolicyService;
@@ -41,12 +45,16 @@ export class MediaGateService {
     fallbackService?: FallbackMediaService;
     generationService?: ImageGenerationService;
     storageService?: MediaStorageService;
+    imageRightsService?: ImageRightsService;
+    enforcePublisherBlacklist?: boolean;
   } = {}) {
     this.policyService = options.policyService || new MediaPolicyService();
     this.validationService = options.validationService || new MediaValidationService(this.policyService.getConfig());
     this.fallbackService = options.fallbackService || new FallbackMediaService();
     this.generationService = options.generationService || new ImageGenerationService(undefined, this.policyService);
     this.storageService = options.storageService || new MediaStorageService();
+    this.imageRightsService = options.imageRightsService || new ImageRightsService();
+    this.enforcePublisherBlacklist = options.enforcePublisherBlacklist ?? false;
   }
 
   /**
@@ -78,13 +86,44 @@ export class MediaGateService {
 
     // 2. Filter and rank candidates by rights eligibility first, then relevance
     const evaluatedCandidates = candidates.map(c => {
+      const candidateUrl = c.originalUrl || c.sourceUrl || '';
+      let isRightsOk = this.policyService.isRightsEligible(c.rightsStatus);
+
+      // Check SSRF
+      if (candidateUrl && !this.imageRightsService.checkSsrf(candidateUrl).safe) {
+        isRightsOk = false;
+      }
+      // Check prohibited publishers (NYT, Reuters, BBC, AP, IGN, The Verge, TechCrunch, etc.)
+      if (this.enforcePublisherBlacklist && candidateUrl && this.imageRightsService.isProhibitedPublisher(candidateUrl)) {
+        isRightsOk = false;
+      }
+      // Check NASA third-party copyright if applicable
+      if (this.enforcePublisherBlacklist && candidateUrl.includes('nasa.gov')) {
+        const hasThirdParty = this.imageRightsService.detectNasaThirdPartyCopyright({
+          credit: c.credit,
+          caption: c.caption,
+          url: candidateUrl,
+        });
+        if (hasThirdParty) {
+          isRightsOk = false;
+        }
+      }
+
       const evalRes = this.validationService.evaluateCandidate(c, story);
-      const isRightsOk = this.policyService.isRightsEligible(c.rightsStatus);
       return {
         candidate: c,
         isRightsOk,
         evalRes,
       };
+    });
+
+    // Sort eligible candidates by provider priority if available
+    evaluatedCandidates.sort((a, b) => {
+      const provA = (a.candidate.metadata?.provider as any) || (a.candidate.rightsStatus === 'public_domain' ? 'official_public_domain' : 'fallback');
+      const provB = (b.candidate.metadata?.provider as any) || (b.candidate.rightsStatus === 'public_domain' ? 'official_public_domain' : 'fallback');
+      const pA = this.imageRightsService.getProviderPriority(provA);
+      const pB = this.imageRightsService.getProviderPriority(provB);
+      return pA - pB;
     });
 
     // 3. Look for verified/licensed candidates that pass technical & relevance validation

@@ -13,23 +13,51 @@ import type { PublicationDecisionResult } from '../../types/publishing';
 import type { ArticleBlock } from '../../types/story';
 
 export type AllowedSourceUsage = 'story_lead' | 'full_reference' | 'official_record';
+export type AuthorityLevel = 'primary_official' | 'high_journalism' | 'specialist_technical' | 'lead_only';
+export type DiscoveryRole = 'primary' | 'independent_reporting' | 'lead_only' | 'technical_reporting' | 'research_papers' | 'backstop';
+export type EvidenceRole = 'primary_evidence' | 'corroborating_evidence' | 'lead_only' | 'unusable_for_synthesis';
+export type SourceRegistryStatus = 'healthy' | 'degraded' | 'failing' | 'deactivated';
 
 export interface ApprovedSource {
+  // Required 14 canonical fields
+  sourceId: string;
+  sourceName: string;
+  category: string;
+  sourceType: 'rss' | 'atom' | 'official_feed';
+  feedUrl: string;
+  active: boolean;
+  authorityLevel: AuthorityLevel;
+  allowedUsage: AllowedSourceUsage;
+  discoveryRole: DiscoveryRole;
+  evidenceRole: EvidenceRole;
+  pollingCadence: number;
+  status: SourceRegistryStatus;
+  lastSuccess?: string | null;
+  lastFailure?: string | null;
+  errorCount: number;
+
+  // DB-aligned snake_case aliases & legacy helpers
   source_id: string;
   source_name: string;
-  feed_url: string;
   source_type: 'rss' | 'atom' | 'official_feed';
+  feed_url: string;
   is_active: boolean;
-  polling_cadence_minutes: number;
-  priority: number;
-  allowed_usage: AllowedSourceUsage;
-  is_official: boolean;
-  category_hints: string[];
+  authority_level?: AuthorityLevel;
+  allowed_usage?: AllowedSourceUsage;
+  discovery_role?: DiscoveryRole;
+  evidence_role?: EvidenceRole;
+  polling_cadence?: number;
+  polling_cadence_minutes?: number;
+  priority?: number;
+  is_official?: boolean;
+  category_hints?: string[];
   last_polled_at?: string | null;
   last_success_at?: string | null;
   last_error_at?: string | null;
   last_error?: string | null;
-  consecutive_failures: number;
+  consecutive_failures?: number;
+  failure_reason?: string | null;
+  metadata?: Record<string, any>;
 }
 
 export interface StoryLead {

@@ -196,7 +196,8 @@ async function main() {
       {
         claim: "Tankers rerouting away from Strait of Hormuz to Gulf of Kutch",
         evidenceText: "Commercial tankers alter transits towards Gulf of Kutch and Oman anchorages amid projectile warnings.",
-        sourceUrl: "https://www.reuters.com/world/middle-east/shipping-firms-reroute-tankers-strait-of-hormuz-2026-10-01"
+        sourceUrl: "https://www.reuters.com/world/middle-east/shipping-firms-reroute-tankers-strait-of-hormuz-2026-10-01",
+        confidence: 0.98
       }
     ],
     overall_confidence: 0.98,
@@ -231,11 +232,12 @@ async function main() {
     rejectedFields: [],
     claimCoverage: 0.95,
     sourceCoverage: 0.90,
-    categoryStatus: 'match',
-    dateStatus: 'valid',
-    numberStatus: 'valid',
-    quoteStatus: 'valid',
-    entityStatus: 'valid',
+    categoryValidation: { expectedCategory: 'world', extractedCategory: 'world', status: 'match', confidence: 0.98 },
+    dateValidation: { status: 'valid' },
+    numberValidation: { numbersChecked: 1, numbersPassed: 1, status: 'valid' },
+    quoteValidation: { quotesChecked: 1, quotesPassed: 1, status: 'valid' },
+    entityValidation: { entitiesChecked: 1, entitiesPassed: 1, status: 'valid' },
+    originalityCheck: { copyRiskScore: 0.05, status: 'original' },
     sensitiveTopicFlags: [],
     validatorVersion: 'v1.0.0-production-gate',
     inputHash: `hash-val-${validationId}`,

@@ -8901,284 +8901,692 @@ var MockPublicationRepository = class {
 };
 
 // src/services/research/ApprovedSourceRegistry.ts
+function createApprovedSource(src) {
+  return {
+    sourceId: src.sourceId,
+    sourceName: src.sourceName,
+    category: src.category,
+    sourceType: src.sourceType,
+    feedUrl: src.feedUrl,
+    active: src.active,
+    authorityLevel: src.authorityLevel,
+    allowedUsage: src.allowedUsage,
+    discoveryRole: src.discoveryRole,
+    evidenceRole: src.evidenceRole,
+    pollingCadence: src.pollingCadence ?? 10,
+    status: src.status ?? (src.active ? "healthy" : "deactivated"),
+    lastSuccess: src.lastSuccess ?? null,
+    lastFailure: src.lastFailure ?? null,
+    errorCount: src.errorCount ?? 0,
+    // DB-aligned snake_case aliases & legacy helpers
+    source_id: src.sourceId,
+    source_name: src.sourceName,
+    source_type: src.sourceType,
+    feed_url: src.feedUrl,
+    is_active: src.active,
+    authority_level: src.authorityLevel,
+    allowed_usage: src.allowedUsage,
+    discovery_role: src.discoveryRole,
+    evidence_role: src.evidenceRole,
+    polling_cadence: src.pollingCadence ?? 10,
+    polling_cadence_minutes: src.pollingCadence ?? 10,
+    priority: src.priority ?? (src.authorityLevel === "primary_official" ? 1 : 2),
+    is_official: src.isOfficial ?? src.authorityLevel === "primary_official",
+    category_hints: src.categoryHints ?? [src.category.toLowerCase()],
+    consecutive_failures: src.errorCount ?? 0,
+    failure_reason: src.failureReason ?? null,
+    last_success_at: src.lastSuccess ?? null,
+    last_error_at: src.lastFailure ?? null
+  };
+}
 var APPROVED_SOURCES_CATALOG = [
-  // 1. General & World Affairs
-  {
-    source_id: "src-bbc-world",
-    source_name: "BBC News \u2014 World",
-    feed_url: "https://feeds.bbci.co.uk/news/world/rss.xml",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 15,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["world"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-nyt-world",
-    source_name: "The New York Times \u2014 World",
-    feed_url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 10,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["world"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-nyt-tech",
-    source_name: "The New York Times \u2014 Technology",
-    feed_url: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 10,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["technology", "ai"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-nyt-science",
-    source_name: "The New York Times \u2014 Science",
-    feed_url: "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 10,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["science"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-nyt-business",
-    source_name: "The New York Times \u2014 Business",
-    feed_url: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 10,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["business"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-toi-top",
-    source_name: "The Times of India \u2014 Top Stories",
-    feed_url: "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 10,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["world", "business"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-toi-world",
-    source_name: "The Times of India \u2014 World News",
-    feed_url: "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 10,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["world"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-toi-science",
-    source_name: "The Times of India \u2014 Science",
-    feed_url: "https://timesofindia.indiatimes.com/rssfeeds/-2128672765.cms",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 10,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["science"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-toi-tech",
-    source_name: "The Times of India \u2014 Technology",
-    feed_url: "https://timesofindia.indiatimes.com/rssfeeds/66949542.cms",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 10,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["technology", "ai"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-gdelt-news",
-    source_name: "GDELT Project \u2014 Global Live News",
-    feed_url: "https://blog.gdeltproject.org/feed/",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 10,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["world", "technology"],
-    consecutive_failures: 0
-  },
-  // 2. Official Agency & Institutional Feeds
-  {
-    source_id: "src-nasa-breaking",
-    source_name: "NASA News Releases & Missions",
-    feed_url: "https://www.nasa.gov/news-release/feed/",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 20,
-    priority: 1,
-    allowed_usage: "official_record",
-    is_official: true,
-    category_hints: ["space", "science"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-openai-news",
-    source_name: "OpenAI News & Research",
-    feed_url: "https://openai.com/news/rss.xml",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 10,
-    priority: 1,
-    allowed_usage: "official_record",
-    is_official: true,
-    category_hints: ["ai", "technology"],
-    consecutive_failures: 0
-  },
-  // 3. Science & Fundamental Research
-  {
-    source_id: "src-nature-news",
-    source_name: "Nature \u2014 Latest Science News",
-    feed_url: "https://www.nature.com/nature.rss",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 30,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["science"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-phys-org",
-    source_name: "Phys.org \u2014 Physical Sciences",
-    feed_url: "https://phys.org/rss-feed/",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 30,
-    priority: 2,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["science"],
-    consecutive_failures: 0
-  },
-  // 4. Technology & Computing
-  {
-    source_id: "src-ars-technica",
-    source_name: "Ars Technica \u2014 Technology Lab",
-    feed_url: "https://feeds.arstechnica.com/arstechnica/index",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 15,
-    priority: 1,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["technology", "ai"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-the-verge-tech",
-    source_name: "The Verge \u2014 Tech Dispatches",
-    feed_url: "https://www.theverge.com/rss/technology/index.xml",
-    source_type: "atom",
-    is_active: true,
-    polling_cadence_minutes: 20,
-    priority: 2,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["technology"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-mit-tech-review-ai",
-    source_name: "MIT Technology Review \u2014 AI",
-    feed_url: "https://www.technologyreview.com/topic/artificial-intelligence/feed/",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 30,
-    priority: 2,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["ai", "technology"],
-    consecutive_failures: 0
-  },
-  // 5. Gaming & Interactive Media
-  {
-    source_id: "src-eurogamer",
-    source_name: "Eurogamer Dispatches",
-    feed_url: "https://www.eurogamer.net/feed",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 30,
-    priority: 2,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["gaming", "technology"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-game-developer",
-    source_name: "Game Developer \u2014 Industry & Engine Tech",
-    feed_url: "https://www.gamedeveloper.com/rss.xml",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 30,
-    priority: 2,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["gaming", "technology"],
-    consecutive_failures: 0
-  },
-  {
-    source_id: "src-space-news",
-    source_name: "SpaceNews Dispatches",
-    feed_url: "https://spacenews.com/feed/",
-    source_type: "rss",
-    is_active: true,
-    polling_cadence_minutes: 30,
-    priority: 2,
-    allowed_usage: "story_lead",
-    is_official: false,
-    category_hints: ["space"],
-    consecutive_failures: 0
-  }
+  // ==========================================
+  // 1. AI Category
+  // ==========================================
+  createApprovedSource({
+    sourceId: "src-openai-news",
+    sourceName: "OpenAI News & Research",
+    category: "AI",
+    sourceType: "rss",
+    feedUrl: "https://openai.com/news/rss.xml",
+    active: true,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "primary_evidence",
+    pollingCadence: 10,
+    status: "healthy",
+    categoryHints: ["ai", "technology"]
+  }),
+  createApprovedSource({
+    sourceId: "src-nvidia-ai-blog",
+    sourceName: "NVIDIA Blog",
+    category: "AI",
+    sourceType: "rss",
+    feedUrl: "https://blogs.nvidia.com/feed/",
+    active: true,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "primary_evidence",
+    pollingCadence: 10,
+    status: "healthy",
+    categoryHints: ["ai", "technology"]
+  }),
+  createApprovedSource({
+    sourceId: "src-techcrunch-ai",
+    sourceName: "TechCrunch AI",
+    category: "AI",
+    sourceType: "rss",
+    feedUrl: "https://techcrunch.com/category/artificial-intelligence/feed/",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "lead_only",
+    evidenceRole: "lead_only",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["ai", "technology"]
+  }),
+  createApprovedSource({
+    sourceId: "src-arstechnica-tech-lab",
+    sourceName: "Ars Technica Tech Lab",
+    category: "AI",
+    sourceType: "rss",
+    feedUrl: "https://feeds.arstechnica.com/arstechnica/technology-lab",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "technical_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["ai", "technology"]
+  }),
+  createApprovedSource({
+    sourceId: "src-deepmind-blog",
+    sourceName: "Google DeepMind",
+    category: "AI",
+    sourceType: "rss",
+    feedUrl: "https://deepmind.google/blog/rss.xml",
+    active: false,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "unusable_for_synthesis",
+    pollingCadence: 30,
+    status: "deactivated",
+    failureReason: "Google deprecated RSS feed endpoint (returns HTML only)",
+    categoryHints: ["ai", "technology"]
+  }),
+  createApprovedSource({
+    sourceId: "src-anthropic-news",
+    sourceName: "Anthropic News",
+    category: "AI",
+    sourceType: "rss",
+    feedUrl: "https://www.anthropic.com/news/rss.xml",
+    active: false,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "unusable_for_synthesis",
+    pollingCadence: 30,
+    status: "deactivated",
+    failureReason: "HTTP 404 at candidate endpoint",
+    categoryHints: ["ai", "technology"]
+  }),
+  createApprovedSource({
+    sourceId: "src-microsoft-ai-blog",
+    sourceName: "Microsoft AI Blog",
+    category: "AI",
+    sourceType: "rss",
+    feedUrl: "https://blogs.microsoft.com/ai/feed/",
+    active: false,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "unusable_for_synthesis",
+    pollingCadence: 30,
+    status: "deactivated",
+    failureReason: "HTTP 410 Gone at candidate endpoint",
+    categoryHints: ["ai", "technology"]
+  }),
+  // ==========================================
+  // 2. TECHNOLOGY Category
+  // ==========================================
+  createApprovedSource({
+    sourceId: "src-arstechnica-tech",
+    sourceName: "Ars Technica \u2014 Technology Lab",
+    category: "TECHNOLOGY",
+    sourceType: "rss",
+    feedUrl: "https://feeds.arstechnica.com/arstechnica/index",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "technical_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["technology", "ai"]
+  }),
+  createApprovedSource({
+    sourceId: "src-the-verge-tech",
+    sourceName: "The Verge \u2014 Tech Dispatches",
+    category: "TECHNOLOGY",
+    sourceType: "atom",
+    feedUrl: "https://www.theverge.com/rss/index.xml",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["technology"]
+  }),
+  createApprovedSource({
+    sourceId: "src-wired-tech",
+    sourceName: "WIRED",
+    category: "TECHNOLOGY",
+    sourceType: "rss",
+    feedUrl: "https://www.wired.com/feed/rss",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["technology", "science"]
+  }),
+  createApprovedSource({
+    sourceId: "src-mit-tech-review",
+    sourceName: "MIT Technology Review",
+    category: "TECHNOLOGY",
+    sourceType: "rss",
+    feedUrl: "https://www.technologyreview.com/feed/",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "technical_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 30,
+    status: "healthy",
+    categoryHints: ["technology", "ai"]
+  }),
+  createApprovedSource({
+    sourceId: "src-apple-newsroom",
+    sourceName: "Apple Newsroom",
+    category: "TECHNOLOGY",
+    sourceType: "rss",
+    feedUrl: "https://www.apple.com/newsroom/rss-feed.rss",
+    active: true,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "primary_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["technology"]
+  }),
+  createApprovedSource({
+    sourceId: "src-microsoft-blog",
+    sourceName: "Microsoft Official Blog",
+    category: "TECHNOLOGY",
+    sourceType: "rss",
+    feedUrl: "https://blogs.microsoft.com/feed/",
+    active: true,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "primary_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["technology"]
+  }),
+  createApprovedSource({
+    sourceId: "src-techcrunch-main",
+    sourceName: "TechCrunch Main",
+    category: "TECHNOLOGY",
+    sourceType: "rss",
+    feedUrl: "https://techcrunch.com/feed/",
+    active: false,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "lead_only",
+    evidenceRole: "lead_only",
+    pollingCadence: 15,
+    status: "deactivated",
+    failureReason: "Socket hangup / unreachable during verification",
+    categoryHints: ["technology"]
+  }),
+  // ==========================================
+  // 3. SCIENCE Category
+  // ==========================================
+  createApprovedSource({
+    sourceId: "src-science-aaas",
+    sourceName: "Science / AAAS News",
+    category: "SCIENCE",
+    sourceType: "rss",
+    feedUrl: "https://www.science.org/rss/news_current.xml",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "research_papers",
+    evidenceRole: "primary_evidence",
+    pollingCadence: 20,
+    status: "healthy",
+    categoryHints: ["science"]
+  }),
+  createApprovedSource({
+    sourceId: "src-nasa-breaking",
+    sourceName: "NASA News Releases & Missions",
+    category: "SCIENCE",
+    sourceType: "rss",
+    feedUrl: "https://www.nasa.gov/news-release/feed/",
+    active: true,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "primary_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["science", "space"]
+  }),
+  createApprovedSource({
+    sourceId: "src-esa-space-news",
+    sourceName: "ESA Space News",
+    category: "SCIENCE",
+    sourceType: "rss",
+    feedUrl: "https://www.esa.int/rssfeed/Our_Activities/Space_News",
+    active: true,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "primary_evidence",
+    pollingCadence: 20,
+    status: "healthy",
+    categoryHints: ["science", "space"]
+  }),
+  createApprovedSource({
+    sourceId: "src-sciencedaily-top",
+    sourceName: "ScienceDaily Top News",
+    category: "SCIENCE",
+    sourceType: "rss",
+    feedUrl: "https://www.sciencedaily.com/rss/top/science.xml",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "lead_only",
+    evidenceRole: "lead_only",
+    pollingCadence: 20,
+    status: "healthy",
+    categoryHints: ["science"]
+  }),
+  createApprovedSource({
+    sourceId: "src-arxiv-ai",
+    sourceName: "arXiv cs.AI",
+    category: "SCIENCE",
+    sourceType: "rss",
+    feedUrl: "http://export.arxiv.org/rss/cs.AI",
+    active: true,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "research_papers",
+    evidenceRole: "primary_evidence",
+    pollingCadence: 60,
+    status: "healthy",
+    categoryHints: ["science", "ai"]
+  }),
+  createApprovedSource({
+    sourceId: "src-phys-org",
+    sourceName: "Phys.org \u2014 Physical Sciences",
+    category: "SCIENCE",
+    sourceType: "rss",
+    feedUrl: "https://phys.org/rss-feed/",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "technical_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 20,
+    status: "healthy",
+    categoryHints: ["science"]
+  }),
+  createApprovedSource({
+    sourceId: "src-nature-main",
+    sourceName: "Nature \u2014 Latest Science News",
+    category: "SCIENCE",
+    sourceType: "rss",
+    feedUrl: "https://www.nature.com/nature.rss",
+    active: false,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "research_papers",
+    evidenceRole: "unusable_for_synthesis",
+    pollingCadence: 30,
+    status: "deactivated",
+    failureReason: "Redirects to HTML content without XML feed",
+    categoryHints: ["science"]
+  }),
+  createApprovedSource({
+    sourceId: "src-scientific-american",
+    sourceName: "Scientific American",
+    category: "SCIENCE",
+    sourceType: "rss",
+    feedUrl: "https://www.scientificamerican.com/feed/",
+    active: false,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "unusable_for_synthesis",
+    pollingCadence: 30,
+    status: "deactivated",
+    failureReason: "HTTP 404 at candidate endpoint",
+    categoryHints: ["science"]
+  }),
+  // ==========================================
+  // 4. GAMING Category
+  // ==========================================
+  createApprovedSource({
+    sourceId: "src-gamespot-news",
+    sourceName: "GameSpot News",
+    category: "GAMING",
+    sourceType: "rss",
+    feedUrl: "https://www.gamespot.com/feeds/news/",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["gaming"]
+  }),
+  createApprovedSource({
+    sourceId: "src-pc-gamer",
+    sourceName: "PC Gamer",
+    category: "GAMING",
+    sourceType: "rss",
+    feedUrl: "https://www.pcgamer.com/rss/",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["gaming"]
+  }),
+  createApprovedSource({
+    sourceId: "src-polygon-main",
+    sourceName: "Polygon",
+    category: "GAMING",
+    sourceType: "rss",
+    feedUrl: "https://www.polygon.com/rss/index.xml",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["gaming"]
+  }),
+  createApprovedSource({
+    sourceId: "src-vgc-news",
+    sourceName: "Video Games Chronicle (VGC)",
+    category: "GAMING",
+    sourceType: "rss",
+    feedUrl: "https://www.videogameschronicle.com/feed/",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["gaming"]
+  }),
+  createApprovedSource({
+    sourceId: "src-playstation-blog",
+    sourceName: "PlayStation Blog",
+    category: "GAMING",
+    sourceType: "rss",
+    feedUrl: "https://blog.playstation.com/feed/",
+    active: true,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "primary_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["gaming"]
+  }),
+  createApprovedSource({
+    sourceId: "src-xbox-wire",
+    sourceName: "Xbox Wire",
+    category: "GAMING",
+    sourceType: "rss",
+    feedUrl: "https://news.xbox.com/en-us/feed/",
+    active: true,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "primary_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["gaming"]
+  }),
+  createApprovedSource({
+    sourceId: "src-eurogamer",
+    sourceName: "Eurogamer Dispatches",
+    category: "GAMING",
+    sourceType: "rss",
+    feedUrl: "https://www.eurogamer.net/feed",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "lead_only",
+    evidenceRole: "lead_only",
+    pollingCadence: 30,
+    status: "healthy",
+    categoryHints: ["gaming"]
+  }),
+  createApprovedSource({
+    sourceId: "src-ign-articles",
+    sourceName: "IGN Articles",
+    category: "GAMING",
+    sourceType: "rss",
+    feedUrl: "https://www.ign.com/rss/articles",
+    active: false,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "unusable_for_synthesis",
+    pollingCadence: 15,
+    status: "deactivated",
+    failureReason: "HTTP 404 at candidate endpoint",
+    categoryHints: ["gaming"]
+  }),
+  createApprovedSource({
+    sourceId: "src-nintendo-news",
+    sourceName: "Nintendo Newsroom",
+    category: "GAMING",
+    sourceType: "rss",
+    feedUrl: "https://www.nintendo.com/whatsnew/feed/",
+    active: false,
+    authorityLevel: "primary_official",
+    allowedUsage: "official_record",
+    discoveryRole: "primary",
+    evidenceRole: "unusable_for_synthesis",
+    pollingCadence: 30,
+    status: "deactivated",
+    failureReason: "HTTP 404 at candidate endpoint",
+    categoryHints: ["gaming"]
+  }),
+  // ==========================================
+  // 5. SPACE Category
+  // ==========================================
+  createApprovedSource({
+    sourceId: "src-space-com",
+    sourceName: "Space.com All",
+    category: "SPACE",
+    sourceType: "rss",
+    feedUrl: "https://www.space.com/feeds/all",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["space"]
+  }),
+  createApprovedSource({
+    sourceId: "src-arstechnica-space",
+    sourceName: "Ars Technica Science & Space",
+    category: "SPACE",
+    sourceType: "rss",
+    feedUrl: "https://feeds.arstechnica.com/arstechnica/science",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "technical_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["space", "science"]
+  }),
+  // ==========================================
+  // 6. BUSINESS Category
+  // ==========================================
+  createApprovedSource({
+    sourceId: "src-cnbc-rss",
+    sourceName: "CNBC Markets & Business",
+    category: "BUSINESS",
+    sourceType: "rss",
+    feedUrl: "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["business"]
+  }),
+  createApprovedSource({
+    sourceId: "src-techcrunch-startups",
+    sourceName: "TechCrunch Startups & VC",
+    category: "BUSINESS",
+    sourceType: "rss",
+    feedUrl: "https://techcrunch.com/category/startups/feed/",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "lead_only",
+    evidenceRole: "lead_only",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["business"]
+  }),
+  // ==========================================
+  // 7. BACKSTOP Category (Discovery Only)
+  // ==========================================
+  createApprovedSource({
+    sourceId: "src-gdelt-gal",
+    sourceName: "GDELT Article List RSS",
+    category: "BACKSTOP",
+    sourceType: "rss",
+    feedUrl: "https://data.gdeltproject.org/gdeltv3/gal/feed.rss",
+    active: true,
+    authorityLevel: "lead_only",
+    allowedUsage: "story_lead",
+    discoveryRole: "backstop",
+    evidenceRole: "unusable_for_synthesis",
+    pollingCadence: 15,
+    status: "healthy",
+    categoryHints: ["ai", "technology", "science", "gaming", "space", "business"]
+  }),
+  // ==========================================
+  // Additional Test & Global Reporting Fixtures
+  // ==========================================
+  createApprovedSource({
+    sourceId: "src-bbc-world",
+    sourceName: "BBC News \u2014 World",
+    category: "TECHNOLOGY",
+    sourceType: "rss",
+    feedUrl: "https://feeds.bbci.co.uk/news/world/rss.xml",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 15,
+    categoryHints: ["world", "technology"]
+  }),
+  createApprovedSource({
+    sourceId: "src-nyt-world",
+    sourceName: "The New York Times \u2014 World",
+    category: "TECHNOLOGY",
+    sourceType: "rss",
+    feedUrl: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+    active: true,
+    authorityLevel: "high_journalism",
+    allowedUsage: "story_lead",
+    discoveryRole: "independent_reporting",
+    evidenceRole: "corroborating_evidence",
+    pollingCadence: 10,
+    categoryHints: ["world", "technology"]
+  })
 ];
 var ApprovedSourceRegistry = class {
   constructor(initialSources = APPROVED_SOURCES_CATALOG) {
     this.sourcesMap = /* @__PURE__ */ new Map();
     for (const src of initialSources) {
-      this.sourcesMap.set(src.source_id, { ...src });
+      this.sourcesMap.set(src.sourceId, { ...src });
+    }
+  }
+  /**
+   * Optionally syncs and loads all registered feeds from public.research_source_registry in Supabase.
+   */
+  async loadFromDatabase(client2) {
+    try {
+      const { data, error } = await client2.from("research_source_registry").select("*");
+      if (error || !data || data.length === 0) {
+        return this.sourcesMap.size;
+      }
+      for (const row of data) {
+        const approved = createApprovedSource({
+          sourceId: row.source_id,
+          sourceName: row.source_name,
+          category: row.category,
+          sourceType: row.source_type,
+          feedUrl: row.feed_url,
+          active: row.active,
+          authorityLevel: row.authority_level,
+          allowedUsage: row.allowed_usage,
+          discoveryRole: row.discovery_role,
+          evidenceRole: row.evidence_role,
+          pollingCadence: row.polling_cadence,
+          status: row.status,
+          lastSuccess: row.last_success,
+          lastFailure: row.last_failure,
+          errorCount: row.error_count ?? 0,
+          failureReason: row.failure_reason
+        });
+        this.sourcesMap.set(approved.sourceId, approved);
+      }
+      return this.sourcesMap.size;
+    } catch {
+      return this.sourcesMap.size;
     }
   }
   getApprovedSources(filter) {
     const list = Array.from(this.sourcesMap.values());
     return list.filter((s) => {
-      if (filter?.activeOnly && !s.is_active) return false;
+      if (filter?.activeOnly && !s.active) return false;
       if (filter?.priority && s.priority !== filter.priority) return false;
       return true;
     });
@@ -9189,23 +9597,23 @@ var ApprovedSourceRegistry = class {
   getSourceByFeedUrl(feedUrl) {
     const norm = feedUrl.trim().toLowerCase();
     for (const s of this.sourcesMap.values()) {
-      if (s.feed_url.trim().toLowerCase() === norm) {
+      if (s.feedUrl.trim().toLowerCase() === norm || s.feed_url.trim().toLowerCase() === norm) {
         return s;
       }
     }
     return void 0;
   }
   getOfficialSources() {
-    return Array.from(this.sourcesMap.values()).filter((s) => s.is_official && s.is_active);
+    return Array.from(this.sourcesMap.values()).filter((s) => s.is_official && s.active);
   }
   getSourcesByCategory(category) {
     const norm = category.trim().toLowerCase();
     return this.getApprovedSources({ activeOnly: true }).filter(
-      (s) => s.category_hints.some((c) => c.toLowerCase() === norm)
+      (s) => s.category.toLowerCase() === norm || s.category_hints && s.category_hints.some((c) => c.toLowerCase() === norm)
     );
   }
   registerSource(source) {
-    this.sourcesMap.set(source.source_id, { ...source });
+    this.sourcesMap.set(source.sourceId, { ...source });
   }
   updateSourceHealth(sourceId, status) {
     const src = this.sourcesMap.get(sourceId);
@@ -9213,13 +9621,23 @@ var ApprovedSourceRegistry = class {
     const now = status.timestamp || (/* @__PURE__ */ new Date()).toISOString();
     src.last_polled_at = now;
     if (status.success) {
+      src.lastSuccess = now;
       src.last_success_at = now;
+      src.errorCount = 0;
       src.consecutive_failures = 0;
       src.last_error = null;
+      src.status = "healthy";
     } else {
+      src.lastFailure = now;
       src.last_error_at = now;
-      src.consecutive_failures = (src.consecutive_failures || 0) + 1;
+      src.errorCount = (src.errorCount || 0) + 1;
+      src.consecutive_failures = src.errorCount;
       src.last_error = status.error || "FETCH_FAILURE";
+      if (src.errorCount >= 5) {
+        src.status = "failing";
+      } else if (src.errorCount >= 2) {
+        src.status = "degraded";
+      }
     }
   }
 };
@@ -9769,13 +10187,17 @@ var ResearchArticleSynthesizer = class {
     return `You are The Meridian's Senior News Editor, creating an ORIGINAL journalistic report for a premium global news publication.
 You will be provided with a verified RESEARCH FACT SHEET containing structured claims, numbers, entities, and direct quotes from multiple sources.
 
+This is original journalistic synthesis from verified evidence. Do not paraphrase or transform a single source article.
+Must never invent facts, quotes, statistics, dates, or background.
+
 STRICT EDITORIAL MANDATES:
-1. ORIGINAL DRAFTING: You are writing an independent news story about the underlying EVENT. You are NOT paraphrasing, translating, or transforming any single publisher's article. Build your narrative from the supplied factual building blocks.
-2. SOURCE-FACT CONFINEMENT: Use ONLY facts, figures, dates, and quotes explicitly supplied in the research sheet. NEVER invent or extrapolate unverified details.
+1. ORIGINAL DRAFTING: This is original journalistic synthesis from verified evidence. Do not paraphrase or transform a single source article. You are writing an independent news story about the underlying EVENT. You are NOT paraphrasing, translating, or transforming any single publisher's article. Build your narrative from the supplied factual building blocks.
+2. SOURCE-FACT CONFINEMENT: Must never invent facts, quotes, statistics, dates, or background. Use ONLY facts, figures, dates, and quotes explicitly supplied in the research sheet. NEVER invent or extrapolate unverified details.
 3. PRESERVE UNCERTAINTY & CONFLICTS: Retain qualifiers ('alleged', 'unconfirmed', 'reported'). If the research sheet identifies conflicts or discrepancies between sources, explicitly report both perspectives with attribution.
-4. BRITISH ENGLISH STYLE: Adhere strictly to British English spelling, grammar, and idiom (e.g. colour, organisation, centre, programme, defence, whilst, led by).
+4. BRITISH ENGLISH STYLE: Adhere strictly to British English spelling, grammar, and idiom (e.g. colour, organisation, centre, programme, defence, whilst, realise, prioritise, led by).
 5. 700-WORD MINIMUM BODY POLICY:
    - Construct a thorough, in-depth analytical news report of at least 700 substantive words across structured content blocks.
+   - Counted strictly with countArticleBodyWords() (headline, dek, captions, metadata excluded).
    - Organize logically: Lead paragraph (5Ws), Detailed Development, Context & Implications, Verified Numbers & Metrics, Key Statements, Outlook.
    - Do NOT use meaningless filler, fluff, or repetitive phrases to reach 700 words.
 6. OUTPUT: Output a single, valid JSON object matching the required schema. No markdown code block fences or explanatory prose. JSON ONLY.`;
@@ -10063,7 +10485,7 @@ var ResearchCanaryService = class _ResearchCanaryService {
    * Returns the single approved canary category (default: 'science').
    */
   getCanaryCategory() {
-    return (process.env.RESEARCH_CANARY_CATEGORY || "all").trim().toLowerCase();
+    return (process.env.RESEARCH_CANARY_CATEGORY || "science").trim().toLowerCase();
   }
   /**
    * Returns the maximum allowed publications for the live canary (strictly 5).
@@ -10088,14 +10510,13 @@ var ResearchCanaryService = class _ResearchCanaryService {
       return _ResearchCanaryService.inMemoryPublishedCount;
     }
     try {
-      const { count, error } = await this.supabaseClient.from("stories").select("*", { count: "exact", head: true }).eq("status", "published").or("author->>role.eq.Editorial Synthesis,category.eq.science");
+      const cutoffIso = this.getActivationCutoff().toISOString();
+      const { count, error } = await this.supabaseClient.from("stories").select("*", { count: "exact", head: true }).eq("status", "published").eq("category_id", "cat-science").gte("created_at", cutoffIso);
       if (error) {
         console.warn("[ResearchCanaryService] Error counting canary published stories:", error.message);
         return _ResearchCanaryService.inMemoryPublishedCount;
       }
-      const totalPublished = count ?? 20;
-      const canaryNewCount = Math.max(0, totalPublished - 20);
-      return Math.max(canaryNewCount, _ResearchCanaryService.inMemoryPublishedCount);
+      return Math.max(count ?? 0, _ResearchCanaryService.inMemoryPublishedCount);
     } catch (err) {
       console.warn("[ResearchCanaryService] Exception in getCanaryPublishedCount:", err.message);
       return _ResearchCanaryService.inMemoryPublishedCount;
@@ -16136,6 +16557,10 @@ export {
  *
  * The Meridian — Global News Platform
  * Approved Source Registry: Curated catalog of verified, legitimate news sources
+ * Implements 14 canonical fields:
+ * sourceId, sourceName, category, sourceType, feedUrl, active, authorityLevel,
+ * allowedUsage, discoveryRole, evidenceRole, pollingCadence, status,
+ * lastSuccess, lastFailure, errorCount
  */
 /**
  * @license

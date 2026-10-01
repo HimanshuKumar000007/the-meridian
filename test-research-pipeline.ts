@@ -47,6 +47,7 @@ import {
   type EventCluster,
   type UnifiedEvidenceSet,
 } from './src/services/research';
+import { ImageRightsService } from './src/services/media/ImageRightsService';
 import type { DiscoveryItem } from './src/types/discovery';
 import { ValidationEngine } from './src/services/validation/ValidationEngine';
 import { PublicationGateService } from './src/services/publishing/PublicationGateService';
@@ -1275,8 +1276,201 @@ async function runTestSuite() {
     passedTests++;
   }
 
+  // ----------------------------------------------------
+  // TEST 35: Image Rights System
+  // ----------------------------------------------------
+  console.log('\n--- Test 35: Image Rights Verification & Blacklist Enforcement ---');
+  {
+    const rights = new ImageRightsService();
+
+    // 1. Provider priority order
+    assert.strictEqual(rights.getProviderPriority('official_public_domain'), 1);
+    assert.strictEqual(rights.getProviderPriority('wikimedia_commons'), 2);
+    assert.strictEqual(rights.getProviderPriority('openverse'), 3);
+    assert.strictEqual(rights.getProviderPriority('pexels'), 4);
+    assert.strictEqual(rights.getProviderPriority('unsplash'), 5);
+    assert.strictEqual(rights.getProviderPriority('fallback'), 6);
+
+    // 2. Publisher blacklist
+    const prohibitedUrls = [
+      'https://www.nytimes.com/images/2026/quantum.jpg',
+      'https://reuters.com/pictures/lab.png',
+      'https://news.bbc.co.uk/media/sensor.jpg',
+      'https://apnews.com/photo/telescope.webp',
+      'https://ign.com/assets/game.jpg',
+      'https://theverge.com/images/chip.png',
+      'https://techcrunch.com/upload/ai.jpg',
+    ];
+    for (const pUrl of prohibitedUrls) {
+      assert.strictEqual(rights.isProhibitedPublisher(pUrl), true, `Must detect prohibited publisher: ${pUrl}`);
+      const res = rights.verifyImageCandidate({
+        url: pUrl,
+        provider: 'wikimedia_commons',
+        creator: 'Photo Desk',
+        licence: 'cc by 4.0',
+      });
+      assert.strictEqual(res.eligibleForPublication, false, 'Prohibited publisher image must not be eligible');
+      assert.strictEqual(res.rightsStatus, 'rejected');
+    }
+
+    // 3. NASA third-party copyright detection
+    const nasaThirdParty = rights.detectNasaThirdPartyCopyright({
+      caption: 'SpaceX Falcon Heavy launch photo (c) 2026 Space Exploration Technologies Corp. All rights reserved.',
+      credit: 'SpaceX / NASA',
+    });
+    assert.strictEqual(nasaThirdParty, true, 'NASA image with third-party SpaceX copyright must be flagged');
+
+    const nasaOfficial = rights.detectNasaThirdPartyCopyright({
+      caption: 'Hubble Space Telescope ultra deep field view of distant galaxies.',
+      credit: 'NASA / Goddard Space Flight Center',
+    });
+    assert.strictEqual(nasaOfficial, false, 'NASA official public domain work must pass');
+
+    // 4. SSRF protection
+    const ssrfUrls = [
+      'http://localhost:8080/image.png',
+      'http://127.0.0.1:3000/private.jpg',
+      'http://169.254.169.254/latest/meta-data/',
+      'http://10.0.0.1/admin.png',
+      'file:///etc/passwd',
+      'data:image/png;base64,iVBORw==',
+      'javascript:alert(1)',
+    ];
+    for (const sUrl of ssrfUrls) {
+      const ssrfRes = rights.checkSsrf(sUrl);
+      assert.strictEqual(ssrfRes.safe, false, `SSRF vulnerability must be blocked: ${sUrl}`);
+    }
+
+    // 5. Missing licence hold
+    const missingLicence = rights.verifyImageCandidate({
+      url: 'https://example.com/photo.jpg',
+      provider: 'wikimedia_commons',
+      creator: 'Jane Doe',
+      licence: '',
+    });
+    assert.strictEqual(missingLicence.eligibleForPublication, false);
+    assert.strictEqual(missingLicence.rightsStatus, 'rejected');
+
+    console.log('✅ [PASS] Test 35: Image Rights System enforces provider priority, publisher blacklist, NASA third-party check, SSRF, and licence verification');
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 36: NVIDIA Synthesis Prompt & Vocabulary Invariant
+  // ----------------------------------------------------
+  console.log('\n--- Test 36: NVIDIA Synthesis Prompt & Invariant Guarantees ---');
+  {
+    const synth = new ResearchArticleSynthesizer({ isMock: true });
+    const prompt = synth.buildSystemPrompt();
+
+    // Verbatim requirement checks
+    assert(
+      prompt.includes('This is original journalistic synthesis from verified evidence. Do not paraphrase or transform a single source article.'),
+      'Prompt must contain verbatim original synthesis mandate'
+    );
+    assert(
+      prompt.includes('Must never invent facts, quotes, statistics, dates, or background.'),
+      'Prompt must contain verbatim non-fabrication constraint'
+    );
+
+    // British English vocabulary checks
+    const britishWords = ['colour', 'organisation', 'realise', 'prioritise', 'centre', 'defence', 'programme'];
+    for (const w of britishWords) {
+      assert(prompt.toLowerCase().includes(w), `Prompt must include British English spelling requirement: ${w}`);
+    }
+
+    console.log('✅ [PASS] Test 36: NVIDIA system prompt enforces original synthesis, non-fabrication, and British English vocabulary');
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 37: Approved Source Registry 14 Fields Verification
+  // ----------------------------------------------------
+  console.log('\n--- Test 37: Approved Source Registry 14 Canonical Fields ---');
+  {
+    const registry = new ApprovedSourceRegistry();
+    const sources = registry.getApprovedSources();
+
+    assert(sources.length >= 20, 'Registry must contain comprehensive seed catalog');
+
+    for (const src of sources) {
+      // Validate all 14 required fields exist and are well-typed
+      assert(typeof src.sourceId === 'string' && src.sourceId.length > 0, `sourceId required on ${src.sourceName}`);
+      assert(typeof src.sourceName === 'string' && src.sourceName.length > 0, `sourceName required on ${src.sourceId}`);
+      assert(typeof src.category === 'string' && src.category.length > 0, `category required on ${src.sourceId}`);
+      assert(['rss', 'atom', 'official_feed'].includes(src.sourceType), `valid sourceType required on ${src.sourceId}`);
+      assert(typeof src.feedUrl === 'string' && src.feedUrl.startsWith('http'), `valid feedUrl required on ${src.sourceId}`);
+      assert(typeof src.active === 'boolean', `active boolean required on ${src.sourceId}`);
+      assert(['primary_official', 'high_journalism', 'specialist_technical', 'lead_only'].includes(src.authorityLevel), `valid authorityLevel required on ${src.sourceId}`);
+      assert(['story_lead', 'full_reference', 'official_record'].includes(src.allowedUsage), `valid allowedUsage required on ${src.sourceId}`);
+      assert(['primary', 'independent_reporting', 'lead_only', 'technical_reporting', 'research_papers', 'backstop'].includes(src.discoveryRole), `valid discoveryRole required on ${src.sourceId}`);
+      assert(['primary_evidence', 'corroborating_evidence', 'lead_only', 'unusable_for_synthesis'].includes(src.evidenceRole), `valid evidenceRole required on ${src.sourceId}`);
+      assert(typeof src.pollingCadence === 'number' && src.pollingCadence >= 5, `pollingCadence >= 5 required on ${src.sourceId}`);
+      assert(['healthy', 'degraded', 'failing', 'deactivated'].includes(src.status), `valid status required on ${src.sourceId}`);
+      assert(typeof src.errorCount === 'number' && src.errorCount >= 0, `errorCount required on ${src.sourceId}`);
+    }
+
+    console.log(`✅ [PASS] Test 37: All ${sources.length} approved sources satisfy the 14 canonical registry fields`);
+    passedTests++;
+  }
+
+  // ----------------------------------------------------
+  // TEST 38: Canary Isolation & Category Constraints
+  // ----------------------------------------------------
+  console.log('\n--- Test 38: Canary Mode Isolation & Science Only Category ---');
+  {
+    const canary = new ResearchCanaryService(null);
+
+    // 1. Canary category strictly defaults to science
+    assert.strictEqual(canary.getCanaryCategory(), 'science', 'Canary category must default strictly to science');
+
+    // 2. Publication limit strictly 5
+    assert.strictEqual(canary.getMaxCanaryPublications(), 5, 'Canary publication limit must be 5');
+
+    // 3. Category isolation: non-science items rejected
+    const nonScienceItem: DiscoveryItem = {
+      id: 'disc-ai-1',
+      sourceId: 'src-openai-news',
+      sourceName: 'OpenAI News',
+      sourceType: 'rss',
+      title: 'GPT-5 Breakthrough',
+      canonicalUrl: 'https://openai.com/news/gpt-5',
+      sourceUrl: 'https://openai.com/news/gpt-5',
+      discoveredAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+      categoryHint: 'ai',
+      fingerprint: 'fp-ai-1',
+      contentHash: 'hash-test-ai',
+      status: 'new',
+    };
+    const isAiEligible = await canary.isItemEligible(nonScienceItem);
+    assert.strictEqual(isAiEligible, false, 'AI category items must NOT enter canary pipeline');
+
+    // 4. Historical backlog rejection
+    const historicalScienceItem: DiscoveryItem = {
+      id: 'disc-hist-1',
+      sourceId: 'src-science-aaas',
+      sourceName: 'Science / AAAS',
+      sourceType: 'rss',
+      title: 'Historical Science Breakthrough',
+      canonicalUrl: 'https://science.org/breakthrough-2025',
+      sourceUrl: 'https://science.org/breakthrough-2025',
+      discoveredAt: '2025-01-01T00:00:00.000Z', // Before cutoff
+      lastSeenAt: '2025-01-01T00:00:00.000Z',
+      categoryHint: 'science',
+      fingerprint: 'fp-hist-1',
+      contentHash: 'hash-test-hist',
+      status: 'new',
+    };
+    const isHistEligible = await canary.isItemEligible(historicalScienceItem);
+    assert.strictEqual(isHistEligible, false, 'Historical stories prior to activation cutoff must be rejected');
+
+    console.log('✅ [PASS] Test 38: Canary isolation verified (science only, max 5, historical backlog excluded)');
+    passedTests++;
+  }
+
   console.log('\n====================================================');
-  console.log(`ALL 34 RESEARCH & CANARY PIPELINE TESTS PASSED (${passedTests} / 34) [100%]`);
+  console.log(`ALL 38 RESEARCH & CANARY PIPELINE TESTS PASSED (${passedTests} / 38) [100%]`);
   console.log('====================================================');
 }
 

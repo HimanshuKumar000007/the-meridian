@@ -158,6 +158,54 @@ export interface ResearchMonitorMetrics {
   nvidiaCostOrTokenUsage?: string;
 }
 
+export interface ResearchPipelineTelemetry {
+  research: {
+    feedsMonitored: number;
+    storiesDiscovered: number;
+    clustersFormed: number;
+    evidenceSufficiencyRate: number;
+    blockedSources: number;
+    shadowComparisonMetrics: {
+      totalShadowComparisons: number;
+      newArchPassRate: number;
+      avgCompletenessScore: number;
+    };
+  };
+  multiSource: {
+    eventsWith2PlusSources: number;
+    eventsWithOfficialSource: number;
+    sourceDisagreementCount: number;
+  };
+  nvidia: {
+    requests: number;
+    successRate: number;
+    timeoutRate: number;
+    averageDurationMs: number;
+    costOrTokenTracking: {
+      totalTokens: number;
+      estimatedCostUsd: number;
+    };
+  };
+  imageRights: {
+    verificationPassRate: number;
+    fallbackUsage: number;
+    providerBreakdown: {
+      official: number;
+      wikimedia: number;
+      openverse: number;
+      pexels: number;
+      unsplash: number;
+      fallback: number;
+    };
+    rightsRejections: number;
+  };
+  publication: {
+    canaryArticlesPublished: number; // strictly 0-5
+    canaryRejectionRate: number;
+    gatePassRate: number;
+  };
+}
+
 export interface DashboardOverview {
   generatedAt: string;
   timeRange: TimeRangeOption;
@@ -173,6 +221,7 @@ export interface DashboardOverview {
   performance: PerformanceMetrics;
   recentRuns: AutomationRun[];
   research?: ResearchMonitorMetrics;
+  researchPipeline?: ResearchPipelineTelemetry;
 }
 
 export interface DashboardStoryItem {

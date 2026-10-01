@@ -88,7 +88,7 @@ export class ResearchCanaryService {
    * Returns the single approved canary category (default: 'science').
    */
   public getCanaryCategory(): string {
-    return (process.env.RESEARCH_CANARY_CATEGORY || 'all').trim().toLowerCase();
+    return (process.env.RESEARCH_CANARY_CATEGORY || 'science').trim().toLowerCase();
   }
 
   /**
@@ -117,22 +117,20 @@ export class ResearchCanaryService {
     }
 
     try {
-      // Query stories published with canary metadata or editorial synthesis author
+      const cutoffIso = this.getActivationCutoff().toISOString();
       const { count, error } = await this.supabaseClient
         .from('stories')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'published')
-        .or('author->>role.eq.Editorial Synthesis,category.eq.science');
+        .eq('category_id', 'cat-science')
+        .gte('created_at', cutoffIso);
 
       if (error) {
         console.warn('[ResearchCanaryService] Error counting canary published stories:', error.message);
         return ResearchCanaryService.inMemoryPublishedCount;
       }
 
-      // Base published count is 20 historical stories. Only count new ones beyond 20.
-      const totalPublished = count ?? 20;
-      const canaryNewCount = Math.max(0, totalPublished - 20);
-      return Math.max(canaryNewCount, ResearchCanaryService.inMemoryPublishedCount);
+      return Math.max(count ?? 0, ResearchCanaryService.inMemoryPublishedCount);
     } catch (err: any) {
       console.warn('[ResearchCanaryService] Exception in getCanaryPublishedCount:', err.message);
       return ResearchCanaryService.inMemoryPublishedCount;

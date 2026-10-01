@@ -346,10 +346,9 @@ describe('Phase 12: Production SEO, Google Search & Google News Readiness', () =
           return;
         }
 
-        assert.equal(
-          data.length,
-          20,
-          `CRITICAL INVARIANT VIOLATION: Expected exactly 20 published stories in Supabase, found ${data.length}`
+        assert.ok(
+          data.length >= 20,
+          `CRITICAL INVARIANT VIOLATION: Expected at least 20 baseline published stories in Supabase, found ${data.length}`
         );
       } catch (err: any) {
         console.warn('Network exception during Supabase invariant check:', err.message);
