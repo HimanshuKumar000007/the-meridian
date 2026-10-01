@@ -1590,6 +1590,150 @@ var INITIAL_NEWS_SOURCES = [
     categories: ["world"],
     isActive: true,
     consecutiveFailures: 0
+  },
+  // ==========================================
+  // THE NEW YORK TIMES (NYT)
+  // ==========================================
+  {
+    id: "src-nyt-world",
+    slug: "nyt-world",
+    name: "The New York Times \u2014 World",
+    type: "rss",
+    feedUrl: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+    baseUrl: "https://www.nytimes.com",
+    country: "US",
+    language: "en",
+    priority: 1,
+    pollIntervalMinutes: 10,
+    categories: ["world"],
+    isActive: true,
+    consecutiveFailures: 0
+  },
+  {
+    id: "src-nyt-tech",
+    slug: "nyt-tech",
+    name: "The New York Times \u2014 Technology",
+    type: "rss",
+    feedUrl: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+    baseUrl: "https://www.nytimes.com",
+    country: "US",
+    language: "en",
+    priority: 1,
+    pollIntervalMinutes: 10,
+    categories: ["technology", "ai"],
+    isActive: true,
+    consecutiveFailures: 0
+  },
+  {
+    id: "src-nyt-science",
+    slug: "nyt-science",
+    name: "The New York Times \u2014 Science",
+    type: "rss",
+    feedUrl: "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",
+    baseUrl: "https://www.nytimes.com",
+    country: "US",
+    language: "en",
+    priority: 1,
+    pollIntervalMinutes: 10,
+    categories: ["science"],
+    isActive: true,
+    consecutiveFailures: 0
+  },
+  {
+    id: "src-nyt-business",
+    slug: "nyt-business",
+    name: "The New York Times \u2014 Business",
+    type: "rss",
+    feedUrl: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+    baseUrl: "https://www.nytimes.com",
+    country: "US",
+    language: "en",
+    priority: 1,
+    pollIntervalMinutes: 10,
+    categories: ["business"],
+    isActive: true,
+    consecutiveFailures: 0
+  },
+  // ==========================================
+  // THE TIMES OF INDIA (TOI)
+  // ==========================================
+  {
+    id: "src-toi-top",
+    slug: "toi-top",
+    name: "The Times of India \u2014 Top Stories",
+    type: "rss",
+    feedUrl: "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
+    baseUrl: "https://timesofindia.indiatimes.com",
+    country: "IN",
+    language: "en",
+    priority: 1,
+    pollIntervalMinutes: 10,
+    categories: ["world", "business"],
+    isActive: true,
+    consecutiveFailures: 0
+  },
+  {
+    id: "src-toi-world",
+    slug: "toi-world",
+    name: "The Times of India \u2014 World News",
+    type: "rss",
+    feedUrl: "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms",
+    baseUrl: "https://timesofindia.indiatimes.com",
+    country: "IN",
+    language: "en",
+    priority: 1,
+    pollIntervalMinutes: 10,
+    categories: ["world"],
+    isActive: true,
+    consecutiveFailures: 0
+  },
+  {
+    id: "src-toi-science",
+    slug: "toi-science",
+    name: "The Times of India \u2014 Science",
+    type: "rss",
+    feedUrl: "https://timesofindia.indiatimes.com/rssfeeds/-2128672765.cms",
+    baseUrl: "https://timesofindia.indiatimes.com",
+    country: "IN",
+    language: "en",
+    priority: 1,
+    pollIntervalMinutes: 10,
+    categories: ["science"],
+    isActive: true,
+    consecutiveFailures: 0
+  },
+  {
+    id: "src-toi-tech",
+    slug: "toi-tech",
+    name: "The Times of India \u2014 Technology",
+    type: "rss",
+    feedUrl: "https://timesofindia.indiatimes.com/rssfeeds/66949542.cms",
+    baseUrl: "https://timesofindia.indiatimes.com",
+    country: "IN",
+    language: "en",
+    priority: 1,
+    pollIntervalMinutes: 10,
+    categories: ["technology", "ai"],
+    isActive: true,
+    consecutiveFailures: 0
+  },
+  // ==========================================
+  // GDELT GLOBAL EVENT MONITORING
+  // ==========================================
+  {
+    id: "src-gdelt-news",
+    slug: "gdelt-news",
+    name: "GDELT Project \u2014 Global Live News",
+    type: "rss",
+    feedUrl: "https://blog.gdeltproject.org/feed/",
+    baseUrl: "https://www.gdeltproject.org",
+    country: "Global",
+    language: "en",
+    priority: 1,
+    pollIntervalMinutes: 10,
+    categories: ["world", "technology"],
+    isActive: true,
+    consecutiveFailures: 0
   }
 ];
 
@@ -8706,7 +8850,7 @@ var APPROVED_SOURCES_CATALOG = [
     feed_url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
     source_type: "rss",
     is_active: true,
-    polling_cadence_minutes: 20,
+    polling_cadence_minutes: 10,
     priority: 1,
     allowed_usage: "story_lead",
     is_official: false,
@@ -8719,11 +8863,102 @@ var APPROVED_SOURCES_CATALOG = [
     feed_url: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
     source_type: "rss",
     is_active: true,
-    polling_cadence_minutes: 20,
+    polling_cadence_minutes: 10,
     priority: 1,
     allowed_usage: "story_lead",
     is_official: false,
-    category_hints: ["technology"],
+    category_hints: ["technology", "ai"],
+    consecutive_failures: 0
+  },
+  {
+    source_id: "src-nyt-science",
+    source_name: "The New York Times \u2014 Science",
+    feed_url: "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",
+    source_type: "rss",
+    is_active: true,
+    polling_cadence_minutes: 10,
+    priority: 1,
+    allowed_usage: "story_lead",
+    is_official: false,
+    category_hints: ["science"],
+    consecutive_failures: 0
+  },
+  {
+    source_id: "src-nyt-business",
+    source_name: "The New York Times \u2014 Business",
+    feed_url: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+    source_type: "rss",
+    is_active: true,
+    polling_cadence_minutes: 10,
+    priority: 1,
+    allowed_usage: "story_lead",
+    is_official: false,
+    category_hints: ["business"],
+    consecutive_failures: 0
+  },
+  {
+    source_id: "src-toi-top",
+    source_name: "The Times of India \u2014 Top Stories",
+    feed_url: "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
+    source_type: "rss",
+    is_active: true,
+    polling_cadence_minutes: 10,
+    priority: 1,
+    allowed_usage: "story_lead",
+    is_official: false,
+    category_hints: ["world", "business"],
+    consecutive_failures: 0
+  },
+  {
+    source_id: "src-toi-world",
+    source_name: "The Times of India \u2014 World News",
+    feed_url: "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms",
+    source_type: "rss",
+    is_active: true,
+    polling_cadence_minutes: 10,
+    priority: 1,
+    allowed_usage: "story_lead",
+    is_official: false,
+    category_hints: ["world"],
+    consecutive_failures: 0
+  },
+  {
+    source_id: "src-toi-science",
+    source_name: "The Times of India \u2014 Science",
+    feed_url: "https://timesofindia.indiatimes.com/rssfeeds/-2128672765.cms",
+    source_type: "rss",
+    is_active: true,
+    polling_cadence_minutes: 10,
+    priority: 1,
+    allowed_usage: "story_lead",
+    is_official: false,
+    category_hints: ["science"],
+    consecutive_failures: 0
+  },
+  {
+    source_id: "src-toi-tech",
+    source_name: "The Times of India \u2014 Technology",
+    feed_url: "https://timesofindia.indiatimes.com/rssfeeds/66949542.cms",
+    source_type: "rss",
+    is_active: true,
+    polling_cadence_minutes: 10,
+    priority: 1,
+    allowed_usage: "story_lead",
+    is_official: false,
+    category_hints: ["technology", "ai"],
+    consecutive_failures: 0
+  },
+  {
+    source_id: "src-gdelt-news",
+    source_name: "GDELT Project \u2014 Global Live News",
+    feed_url: "https://blog.gdeltproject.org/feed/",
+    source_type: "rss",
+    is_active: true,
+    polling_cadence_minutes: 10,
+    priority: 1,
+    allowed_usage: "story_lead",
+    is_official: false,
+    category_hints: ["world", "technology"],
     consecutive_failures: 0
   },
   // 2. Official Agency & Institutional Feeds
@@ -9080,7 +9315,7 @@ var FactResearchService = class {
     let fetchStatus = "accessible";
     let fetchError;
     const isTestDomain = targetUrl.includes("example.com") || targetUrl.includes("alpha.com") || targetUrl.includes("beta.com") || targetUrl.includes(".test") || targetUrl.includes(".invalid");
-    if (!this.skipRemoteFetch && !isTestDomain && seedText.length < 120) {
+    if (!this.skipRemoteFetch && !isTestDomain && seedText.length < 800) {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -9242,17 +9477,20 @@ ${extracted2.articleText}`;
       }
     }
     const sentences = content.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 25);
+    let detailsCount = 0;
     for (const sent of sentences) {
-      if (/\b(in order to|aiming to|announced that|due to|because of|purpose of|stated that)\b/i.test(sent) && sent.length <= 150) {
+      if (sent.length <= 250 && sent !== lead.title) {
+        const isWhy = /\b(in order to|aiming to|announced that|due to|because of|purpose of|stated that|revealed that|discovered that|found that)\b/i.test(sent);
         facts.push({
-          id: `fact-why-${lead.sourceId}-${Math.random().toString(36).slice(2, 6)}`,
-          dimension: "why",
+          id: `fact-${isWhy ? "why" : "stmt"}-${lead.sourceId}-${Math.random().toString(36).slice(2, 6)}`,
+          dimension: isWhy ? "why" : "statement",
           claim: sent,
           supportingSource: lead.sourceName,
           sourceUrl: lead.canonicalUrl,
-          confidence: 0.88
+          confidence: isWhy ? 0.9 : 0.88
         });
-        break;
+        detailsCount++;
+        if (detailsCount >= 5) break;
       }
     }
     return {
@@ -9888,7 +10126,39 @@ var ResearchCanaryService = class _ResearchCanaryService {
         status: "insufficient",
         error: reason
       });
-      throw new Error(`[ResearchCanaryService] Evidence insufficient for synthesis: ${reason}`);
+      const nowIso2 = (/* @__PURE__ */ new Date()).toISOString();
+      return {
+        id: `ext-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        discoveryItemId: item.id,
+        title: item.title,
+        dek: "",
+        summary: `Evidence insufficient for synthesis: ${reason}`,
+        summaryPoints: [],
+        category: cluster.category,
+        subcategory: "general",
+        classificationConfidence: 0.5,
+        topics: [],
+        status: "normal",
+        publishedAt: nowIso2,
+        entities: [],
+        facts: [],
+        timelineCandidates: [],
+        contentBlocks: [],
+        sources: evidenceSet.sourcesConsulted.map((s) => ({ name: s.sourceName, url: s.url })),
+        heroImage: null,
+        sourceEvidence: [],
+        overallConfidence: 0.1,
+        confidenceLevel: "low",
+        hasConflicts: false,
+        conflictDetails: reason,
+        extractionStatus: "needs_review",
+        model: "research-evidence-gate",
+        promptVersion: "research-canary-v1",
+        inputHash: "hash-insufficient",
+        outputHash: "hash-insufficient",
+        createdAt: nowIso2,
+        updatedAt: nowIso2
+      };
     }
     const draft = await this.synthesizer.synthesize(evidenceSet);
     const measuredWords = countArticleBodyWords(draft.contentBlocks);
@@ -9910,9 +10180,8 @@ var ResearchCanaryService = class _ResearchCanaryService {
         status: "held",
         error: `Article word count ${measuredWords} < 700 words`
       });
-      throw new Error(
-        `[ResearchCanaryService] Synthesized draft has ${measuredWords} words; strictly violates ${MIN_ARTICLE_BODY_WORDS}-word policy.`
-      );
+      draft.rawCandidate.extractionStatus = "needs_review";
+      draft.rawCandidate.conflictDetails = `Article body word count ${measuredWords} < ${MIN_ARTICLE_BODY_WORDS} words`;
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const candidateId = `ext-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;

@@ -256,7 +256,39 @@ export class ResearchCanaryService {
         error: reason,
       });
 
-      throw new Error(`[ResearchCanaryService] Evidence insufficient for synthesis: ${reason}`);
+      const nowIso = new Date().toISOString();
+      return {
+        id: `ext-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        discoveryItemId: item.id,
+        title: item.title,
+        dek: '',
+        summary: `Evidence insufficient for synthesis: ${reason}`,
+        summaryPoints: [],
+        category: cluster.category,
+        subcategory: 'general',
+        classificationConfidence: 0.5,
+        topics: [],
+        status: 'normal',
+        publishedAt: nowIso,
+        entities: [],
+        facts: [],
+        timelineCandidates: [],
+        contentBlocks: [],
+        sources: evidenceSet.sourcesConsulted.map((s) => ({ name: s.sourceName, url: s.url })),
+        heroImage: null,
+        sourceEvidence: [],
+        overallConfidence: 0.1,
+        confidenceLevel: 'low',
+        hasConflicts: false,
+        conflictDetails: reason,
+        extractionStatus: 'needs_review',
+        model: 'research-evidence-gate',
+        promptVersion: 'research-canary-v1',
+        inputHash: 'hash-insufficient',
+        outputHash: 'hash-insufficient',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
     }
 
     // 4. Synthesize Original Article via NVIDIA AI (British English, >= 700 substantive words)
@@ -283,9 +315,9 @@ export class ResearchCanaryService {
         error: `Article word count ${measuredWords} < 700 words`,
       });
 
-      throw new Error(
-        `[ResearchCanaryService] Synthesized draft has ${measuredWords} words; strictly violates ${MIN_ARTICLE_BODY_WORDS}-word policy.`
-      );
+      // Mark candidate as needs_review / hold so downstream publication gate holds it cleanly
+      draft.rawCandidate.extractionStatus = 'needs_review';
+      draft.rawCandidate.conflictDetails = `Article body word count ${measuredWords} < ${MIN_ARTICLE_BODY_WORDS} words`;
     }
 
     // 6. Format Candidate conforming to news_extractions schema

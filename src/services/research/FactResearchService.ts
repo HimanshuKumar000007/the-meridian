@@ -90,8 +90,8 @@ export class FactResearchService {
       targetUrl.includes('.test') ||
       targetUrl.includes('.invalid');
 
-    // Attempt bounded enrichment fetch only if not in skip mode, not test domain, and seed text is brief (<120 chars)
-    if (!this.skipRemoteFetch && !isTestDomain && seedText.length < 120) {
+    // Attempt bounded enrichment fetch only if not in skip mode, not test domain, and seed text is brief (<800 chars)
+    if (!this.skipRemoteFetch && !isTestDomain && seedText.length < 800) {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -286,22 +286,26 @@ export class FactResearchService {
       }
     }
 
-    // 6. WHY & STATEMENTS: sentences containing causation or rationale keywords
-    const sentences = content.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 25);
+    // 6. DETAILS & WHY STATEMENTS: Extract substantive factual claims from content sentences
+    const sentences = content
+      .split(/[.!?]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 25);
+
+    let detailsCount = 0;
     for (const sent of sentences) {
-      if (
-        /\b(in order to|aiming to|announced that|due to|because of|purpose of|stated that)\b/i.test(sent) &&
-        sent.length <= 150
-      ) {
+      if (sent.length <= 250 && sent !== lead.title) {
+        const isWhy = /\b(in order to|aiming to|announced that|due to|because of|purpose of|stated that|revealed that|discovered that|found that)\b/i.test(sent);
         facts.push({
-          id: `fact-why-${lead.sourceId}-${Math.random().toString(36).slice(2, 6)}`,
-          dimension: 'why',
+          id: `fact-${isWhy ? 'why' : 'stmt'}-${lead.sourceId}-${Math.random().toString(36).slice(2, 6)}`,
+          dimension: isWhy ? 'why' : 'statement',
           claim: sent,
           supportingSource: lead.sourceName,
           sourceUrl: lead.canonicalUrl,
-          confidence: 0.88,
+          confidence: isWhy ? 0.90 : 0.88,
         });
-        break; // Keep 1 concise why
+        detailsCount++;
+        if (detailsCount >= 5) break;
       }
     }
 
