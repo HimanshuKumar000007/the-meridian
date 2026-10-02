@@ -156,6 +156,29 @@ export class SourceContentAcquisitionService {
      *
      * Only applied to items < 800 chars (Tier 1 items are already substantive enough).
      */
+    // Paywalled publishers that trigger anti-scraping blocks or LLM copyright refusals
+    const PAYWALLED_DOMAINS = /(?:nytimes\.com|nyt\.com|wsj\.com|bloomberg\.com|ft\.com)/i;
+    const isPaywalledDomain = PAYWALLED_DOMAINS.test(item.canonicalUrl || item.sourceUrl || item.sourceSlug || '');
+
+    if (isPaywalledDomain) {
+      return {
+        url: item.sourceUrl,
+        canonicalUrl: item.canonicalUrl || item.sourceUrl,
+        title: item.title,
+        description: item.description || '',
+        author: item.author || null,
+        heroImage: item.imageUrl || null,
+        publishedDate: item.publishedAt || null,
+        articleText: '',
+        wordCount: 0,
+        isTruncated: true,
+        fetchStatus: 'blocked',
+        statusCode: 403,
+        durationMs: 0,
+        error: 'SOURCE_PAYWALLED: Domain disallowed by copyright syndication policy',
+      };
+    }
+
     const GATED_SENTINELS = /(?:read\s+more|continue\s+reading|read\s+the\s+full\s+(?:article|story|post)|more\s+at\s+\S+|subscribe\s+to\s+read|sign\s+in\s+to\s+read|click\s+to\s+read|\.{3,}\s*$|\[\.\.\.\]|…)$/i;
     const isGatedSource =
       existingCombined.length < DEEP_RECOVERY_THRESHOLD_CHARS &&

@@ -1760,6 +1760,26 @@ var SourceContentAcquisitionService = class {
     const startTime = Date.now();
     const existingRaw = (item.description || item.rawPayload?.content || "").trim();
     const existingCombined = [item.title, existingRaw].filter(Boolean).join("\n\n").trim();
+    const PAYWALLED_DOMAINS = /(?:nytimes\.com|nyt\.com|wsj\.com|bloomberg\.com|ft\.com)/i;
+    const isPaywalledDomain = PAYWALLED_DOMAINS.test(item.canonicalUrl || item.sourceUrl || item.sourceSlug || "");
+    if (isPaywalledDomain) {
+      return {
+        url: item.sourceUrl,
+        canonicalUrl: item.canonicalUrl || item.sourceUrl,
+        title: item.title,
+        description: item.description || "",
+        author: item.author || null,
+        heroImage: item.imageUrl || null,
+        publishedDate: item.publishedAt || null,
+        articleText: "",
+        wordCount: 0,
+        isTruncated: true,
+        fetchStatus: "blocked",
+        statusCode: 403,
+        durationMs: 0,
+        error: "SOURCE_PAYWALLED: Domain disallowed by copyright syndication policy"
+      };
+    }
     const GATED_SENTINELS = /(?:read\s+more|continue\s+reading|read\s+the\s+full\s+(?:article|story|post)|more\s+at\s+\S+|subscribe\s+to\s+read|sign\s+in\s+to\s+read|click\s+to\s+read|\.{3,}\s*$|\[\.\.\.\]|…)$/i;
     const isGatedSource = existingCombined.length < DEEP_RECOVERY_THRESHOLD_CHARS && GATED_SENTINELS.test(existingRaw.trim());
     if (existingCombined.length >= DEEP_RECOVERY_THRESHOLD_CHARS) {
@@ -2610,7 +2630,7 @@ var EvidenceSufficiencyEvaluator = class {
 // src/services/extraction/NvidiaClient.ts
 var DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 var DEFAULT_MODEL = "openai/gpt-oss-20b";
-var DEFAULT_TIMEOUT_MS2 = 11e4;
+var DEFAULT_TIMEOUT_MS2 = 55e3;
 var DEFAULT_TEMPERATURE = 0.1;
 var DEFAULT_MAX_TOKENS = 4096;
 var NvidiaClient = class {

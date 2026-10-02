@@ -171,11 +171,21 @@ export class ExtractionEngine {
       rawJson = llmResult.rawJson;
       usedModel = llmResult.model;
 
-      // Parse JSON — with truncation-aware recovery
+      // Check for explicit LLM refusal (e.g. copyright/safety policy refusal on paywalled/restricted text)
+      const isRefusal =
+        /i('?m| am) sorry|cannot comply|can't comply|unable to (fulfill|assist|comply)|copyright policy|safety guidelines|against my guidelines/i.test(
+          rawJson
+        );
+
       let parsedObj: any;
-      try {
-        parsedObj = JSON.parse(rawJson);
-      } catch (parseErr: any) {
+      if (isRefusal) {
+        errorCode = 'LLM_REFUSAL_BLOCKED';
+        extractionError = `LLM refused processing due to safety/copyright constraints: ${rawJson.slice(0, 150)}`;
+      } else {
+        // Parse JSON — with truncation-aware recovery
+        try {
+          parsedObj = JSON.parse(rawJson);
+        } catch (parseErr: any) {
         const isTruncated =
           parseErr.message?.includes('Unexpected end') ||
           parseErr.message?.includes('Unterminated') ||
@@ -239,9 +249,10 @@ export class ExtractionEngine {
           }
         }
       }
+      }
 
       if (!parsedObj || typeof parsedObj !== 'object') {
-        errorCode = 'MALFORMED_OUTPUT';
+        errorCode = errorCode || 'MALFORMED_OUTPUT';
         extractionError = `Failed to parse valid structured JSON from LLM: ${rawJson.slice(0, 200)}`;
       }
 
@@ -466,7 +477,7 @@ export class ExtractionEngine {
 
       const attemptCount = previousAttempts + 1;
       const maxRetries = options.maxRetries ?? getMaxExtractionRetries();
-      const isDeadLetter = attemptCount >= maxRetries;
+      const isDeadLetter = attemptCount >= maxRetries || errorCode === 'LLM_REFUSAL_BLOCKED';
       const finalErrorCode = isDeadLetter ? DEAD_LETTER_ERROR_CODE : errorCode;
 
       const failedRecord: NewsExtractionRecord = {

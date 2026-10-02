@@ -292,7 +292,7 @@ var PipelineOrchestrator = class {
         const schedule = scheduleMap.get(stage);
         const stageLimit = options.limitOverride || (schedule?.maxBatchSize ? schedule.maxBatchSize : config2.maxBatch[stage]);
         const elapsedSinceStart = Date.now() - startTime;
-        const SERVERLESS_EXECUTION_BUDGET_MS = 1e5;
+        const SERVERLESS_EXECUTION_BUDGET_MS = 7e4;
         if (elapsedSinceStart >= SERVERLESS_EXECUTION_BUDGET_MS) {
           stageResults[stage] = {
             stage,
@@ -446,7 +446,7 @@ var PipelineOrchestrator = class {
         planCapability
       };
       const hookToRun = options.monitoringHook || this.monitoringHook;
-      if (!isDryRun && hookToRun && Date.now() - startTime < 11e4) {
+      if (!isDryRun && hookToRun && Date.now() - startTime < 85e3) {
         try {
           await hookToRun(runResult);
         } catch (hookErr) {
@@ -2195,6 +2195,26 @@ var SourceContentAcquisitionService = class {
     const startTime = Date.now();
     const existingRaw = (item.description || item.rawPayload?.content || "").trim();
     const existingCombined = [item.title, existingRaw].filter(Boolean).join("\n\n").trim();
+    const PAYWALLED_DOMAINS = /(?:nytimes\.com|nyt\.com|wsj\.com|bloomberg\.com|ft\.com)/i;
+    const isPaywalledDomain = PAYWALLED_DOMAINS.test(item.canonicalUrl || item.sourceUrl || item.sourceSlug || "");
+    if (isPaywalledDomain) {
+      return {
+        url: item.sourceUrl,
+        canonicalUrl: item.canonicalUrl || item.sourceUrl,
+        title: item.title,
+        description: item.description || "",
+        author: item.author || null,
+        heroImage: item.imageUrl || null,
+        publishedDate: item.publishedAt || null,
+        articleText: "",
+        wordCount: 0,
+        isTruncated: true,
+        fetchStatus: "blocked",
+        statusCode: 403,
+        durationMs: 0,
+        error: "SOURCE_PAYWALLED: Domain disallowed by copyright syndication policy"
+      };
+    }
     const GATED_SENTINELS = /(?:read\s+more|continue\s+reading|read\s+the\s+full\s+(?:article|story|post)|more\s+at\s+\S+|subscribe\s+to\s+read|sign\s+in\s+to\s+read|click\s+to\s+read|\.{3,}\s*$|\[\.\.\.\]|…)$/i;
     const isGatedSource = existingCombined.length < DEEP_RECOVERY_THRESHOLD_CHARS && GATED_SENTINELS.test(existingRaw.trim());
     if (existingCombined.length >= DEEP_RECOVERY_THRESHOLD_CHARS) {
@@ -3097,61 +3117,69 @@ var ExtractionEngine = class {
       );
       rawJson = llmResult.rawJson;
       usedModel = llmResult.model;
+      const isRefusal = /i('?m| am) sorry|cannot comply|can't comply|unable to (fulfill|assist|comply)|copyright policy|safety guidelines|against my guidelines/i.test(
+        rawJson
+      );
       let parsedObj;
-      try {
-        parsedObj = JSON.parse(rawJson);
-      } catch (parseErr) {
-        const isTruncated = parseErr.message?.includes("Unexpected end") || parseErr.message?.includes("Unterminated") || parseErr.message?.includes("end of JSON") || parseErr.message?.includes("Expected ','") || parseErr.message?.includes("Expected double-quoted") || parseErr.message?.includes("in JSON at position");
-        if (isTruncated) {
-          const repaired = this.repairTruncatedJson(rawJson);
-          let repairSucceeded = false;
-          if (repaired) {
-            try {
-              parsedObj = JSON.parse(repaired);
-              repairSucceeded = true;
-            } catch {
+      if (isRefusal) {
+        errorCode = "LLM_REFUSAL_BLOCKED";
+        extractionError = `LLM refused processing due to safety/copyright constraints: ${rawJson.slice(0, 150)}`;
+      } else {
+        try {
+          parsedObj = JSON.parse(rawJson);
+        } catch (parseErr) {
+          const isTruncated = parseErr.message?.includes("Unexpected end") || parseErr.message?.includes("Unterminated") || parseErr.message?.includes("end of JSON") || parseErr.message?.includes("Expected ','") || parseErr.message?.includes("Expected double-quoted") || parseErr.message?.includes("in JSON at position");
+          if (isTruncated) {
+            const repaired = this.repairTruncatedJson(rawJson);
+            let repairSucceeded = false;
+            if (repaired) {
+              try {
+                parsedObj = JSON.parse(repaired);
+                repairSucceeded = true;
+              } catch {
+              }
             }
-          }
-          if (!repairSucceeded) {
-            try {
-              const brevityRetry = await this.llmProvider.extractStructuredNews(
-                systemPrompt,
-                `Your previous response was truncated mid-JSON (hit token limit). Produce a COMPLETE and strictly valid JSON response. Ensure contentBlocks has at least 10-12 substantive paragraphs/headings (>=700 words total). Ensure all arrays and objects are properly closed. Source:
+            if (!repairSucceeded) {
+              try {
+                const brevityRetry = await this.llmProvider.extractStructuredNews(
+                  systemPrompt,
+                  `Your previous response was truncated mid-JSON (hit token limit). Produce a COMPLETE and strictly valid JSON response. Ensure contentBlocks has at least 10-12 substantive paragraphs/headings (>=700 words total). Ensure all arrays and objects are properly closed. Source:
 
 ${userPrompt}`,
-                options.model,
-                3800
+                  options.model,
+                  3800
+                );
+                try {
+                  parsedObj = JSON.parse(brevityRetry.rawJson);
+                } catch {
+                  const rep = this.repairTruncatedJson(brevityRetry.rawJson);
+                  if (rep) parsedObj = JSON.parse(rep);
+                }
+              } catch {
+              }
+            }
+          } else {
+            try {
+              const retryCorrection = await this.llmProvider.extractStructuredNews(
+                systemPrompt,
+                `The previous response was malformed JSON: ${parseErr.message}. Output ONLY valid JSON matching the schema for the following source:
+
+${userPrompt}`,
+                options.model
               );
               try {
-                parsedObj = JSON.parse(brevityRetry.rawJson);
+                parsedObj = JSON.parse(retryCorrection.rawJson);
               } catch {
-                const rep = this.repairTruncatedJson(brevityRetry.rawJson);
+                const rep = this.repairTruncatedJson(retryCorrection.rawJson);
                 if (rep) parsedObj = JSON.parse(rep);
               }
             } catch {
             }
           }
-        } else {
-          try {
-            const retryCorrection = await this.llmProvider.extractStructuredNews(
-              systemPrompt,
-              `The previous response was malformed JSON: ${parseErr.message}. Output ONLY valid JSON matching the schema for the following source:
-
-${userPrompt}`,
-              options.model
-            );
-            try {
-              parsedObj = JSON.parse(retryCorrection.rawJson);
-            } catch {
-              const rep = this.repairTruncatedJson(retryCorrection.rawJson);
-              if (rep) parsedObj = JSON.parse(rep);
-            }
-          } catch {
-          }
         }
       }
       if (!parsedObj || typeof parsedObj !== "object") {
-        errorCode = "MALFORMED_OUTPUT";
+        errorCode = errorCode || "MALFORMED_OUTPUT";
         extractionError = `Failed to parse valid structured JSON from LLM: ${rawJson.slice(0, 200)}`;
       }
       if (parsedObj && typeof parsedObj === "object") {
@@ -3323,7 +3351,7 @@ ${userPrompt}`,
       }
       const attemptCount = previousAttempts + 1;
       const maxRetries = options.maxRetries ?? getMaxExtractionRetries();
-      const isDeadLetter = attemptCount >= maxRetries;
+      const isDeadLetter = attemptCount >= maxRetries || errorCode === "LLM_REFUSAL_BLOCKED";
       const finalErrorCode = isDeadLetter ? DEAD_LETTER_ERROR_CODE : errorCode;
       const failedRecord = {
         id: candidateId,
@@ -3609,7 +3637,7 @@ ${userPrompt}`,
 // src/services/extraction/NvidiaClient.ts
 var DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 var DEFAULT_MODEL = "openai/gpt-oss-20b";
-var DEFAULT_TIMEOUT_MS3 = 11e4;
+var DEFAULT_TIMEOUT_MS3 = 55e3;
 var DEFAULT_TEMPERATURE = 0.1;
 var DEFAULT_MAX_TOKENS = 4096;
 var NvidiaClient = class {
@@ -11184,7 +11212,7 @@ var StageRunnerService = class {
       const errors = [];
       const canaryService = new ResearchCanaryService(this.supabaseClient);
       for (const item of pendingItems) {
-        if (Date.now() - started > 75e3 && (succeeded > 0 || failed > 0)) {
+        if (Date.now() - started > 45e3 && (succeeded > 0 || failed > 0)) {
           break;
         }
         try {

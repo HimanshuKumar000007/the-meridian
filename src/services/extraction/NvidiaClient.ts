@@ -56,9 +56,8 @@ export interface ExtractionLLMProvider {
 
 const DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 const DEFAULT_MODEL = 'openai/gpt-oss-20b';
-// 110 s — gives NVIDIA the full serverless budget (Vercel maxDuration=120 s)
-// while leaving 10 s for pipeline overhead and graceful response return.
-const DEFAULT_TIMEOUT_MS = 110000;
+// 55 s — leaves ample headroom for orchestrator overhead and graceful response return within Vercel's 120s maxDuration.
+const DEFAULT_TIMEOUT_MS = 55000;
 const DEFAULT_TEMPERATURE = 0.1;
 const DEFAULT_MAX_TOKENS = 4096;
 

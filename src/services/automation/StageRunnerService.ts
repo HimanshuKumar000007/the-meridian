@@ -202,8 +202,8 @@ export class StageRunnerService {
       const canaryService = new ResearchCanaryService(this.supabaseClient);
 
       for (const item of pendingItems) {
-        // Guard serverless time budget: if extraction exceeded 75 seconds and we already processed at least 1 item, stop batch cleanly
-        if (Date.now() - started > 75000 && (succeeded > 0 || failed > 0)) {
+        // Guard serverless time budget: if extraction exceeded 45 seconds and we already processed at least 1 item, stop batch cleanly
+        if (Date.now() - started > 45000 && (succeeded > 0 || failed > 0)) {
           break;
         }
 

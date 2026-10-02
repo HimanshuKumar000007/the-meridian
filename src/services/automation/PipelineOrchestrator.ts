@@ -196,11 +196,11 @@ export class PipelineOrchestrator {
         const schedule = scheduleMap.get(stage);
         const stageLimit = options.limitOverride || (schedule?.maxBatchSize ? schedule.maxBatchSize : config.maxBatch[stage]);
 
-        // Check overall serverless execution budget (100 seconds max from orchestrator start,
-        // with 20s buffer before 120s Vercel maxDuration). NVIDIA timeout is 110s per call,
-        // so only one NVIDIA call can run per orchestrator cycle — by design.
+        // Check overall serverless execution budget (70 seconds max from orchestrator start,
+        // with 50s buffer before 120s Vercel maxDuration). Ensures the process is NEVER
+        // killed prematurely by Vercel and always finishes and records run metrics cleanly.
         const elapsedSinceStart = Date.now() - startTime;
-        const SERVERLESS_EXECUTION_BUDGET_MS = 100000;
+        const SERVERLESS_EXECUTION_BUDGET_MS = 70000;
         if (elapsedSinceStart >= SERVERLESS_EXECUTION_BUDGET_MS) {
           stageResults[stage] = {
             stage,
@@ -380,7 +380,7 @@ export class PipelineOrchestrator {
       };
 
       const hookToRun = options.monitoringHook || this.monitoringHook;
-      if (!isDryRun && hookToRun && (Date.now() - startTime < 110000)) {
+      if (!isDryRun && hookToRun && (Date.now() - startTime < 85000)) {
         try {
           await hookToRun(runResult);
         } catch (hookErr) {
