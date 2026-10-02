@@ -60,7 +60,7 @@ const DEFAULT_MODEL = 'openai/gpt-oss-20b';
 // while leaving 10 s for pipeline overhead and graceful response return.
 const DEFAULT_TIMEOUT_MS = 110000;
 const DEFAULT_TEMPERATURE = 0.1;
-const DEFAULT_MAX_TOKENS = 2500;
+const DEFAULT_MAX_TOKENS = 4096;
 
 /**
  * Server-Side NVIDIA AI Inference Client.

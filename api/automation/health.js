@@ -2610,9 +2610,9 @@ var EvidenceSufficiencyEvaluator = class {
 // src/services/extraction/NvidiaClient.ts
 var DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 var DEFAULT_MODEL = "openai/gpt-oss-20b";
-var DEFAULT_TIMEOUT_MS2 = 5e4;
+var DEFAULT_TIMEOUT_MS2 = 11e4;
 var DEFAULT_TEMPERATURE = 0.1;
-var DEFAULT_MAX_TOKENS = 2500;
+var DEFAULT_MAX_TOKENS = 4096;
 var NvidiaClient = class {
   constructor(options = {}) {
     this.apiKey = options.apiKey || (typeof process !== "undefined" ? process.env.NVIDIA_API_KEY || "" : "");
