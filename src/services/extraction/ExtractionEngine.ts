@@ -392,12 +392,17 @@ export class ExtractionEngine {
       }
 
       // Schema Validation via Zod
-      const parseResult = ExtractedPayloadSchema.safeParse(parsedObj);
-      if (!parseResult.success) {
-        errorCode = 'SCHEMA_VALIDATION_ERROR';
-        extractionError = `Schema validation failed: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`;
+      if (!parsedObj || typeof parsedObj !== 'object') {
+        errorCode = errorCode || 'MALFORMED_OUTPUT';
+        extractionError = extractionError || `Failed to parse valid structured JSON from LLM: ${rawJson.slice(0, 200)}`;
       } else {
-        validatedPayload = parseResult.data;
+        const parseResult = ExtractedPayloadSchema.safeParse(parsedObj);
+        if (!parseResult.success) {
+          errorCode = 'SCHEMA_VALIDATION_ERROR';
+          extractionError = `Schema validation failed: ${parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`;
+        } else {
+          validatedPayload = parseResult.data;
+        }
       }
     } catch (err: any) {
       errorCode = err.name === 'AbortError' ? 'EXTRACTION_TIMEOUT' : 'LLM_INFERENCE_ERROR';

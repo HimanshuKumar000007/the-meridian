@@ -108,7 +108,7 @@ export const ExtractedPayloadSchema = z.object({
   facts: z.array(ExtractedFactSchema).default([]),
   timelineCandidates: z.array(ExtractedTimelineCandidateSchema).default([]),
 
-  contentBlocks: z.array(ContentBlockSchema).min(1),
+  contentBlocks: z.array(ContentBlockSchema).default([]),
 
   heroImage: z.string().nullable().optional(),
   sourceEvidence: z.array(SourceEvidenceItemSchema).default([]),
