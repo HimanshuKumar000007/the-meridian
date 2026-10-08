@@ -90,7 +90,7 @@ export class AutomationHealthService {
       const failures = schedule?.consecutiveFailures || 0;
       const depth = queueDepths[stage] || 0;
       const ageMinutes = oldestPendingAges[stage] || null;
-      const intervalMinutes = schedule?.targetIntervalMinutes || 10;
+      const intervalMinutes = schedule?.targetIntervalMinutes || 60;
 
       let stageHealth: AutomationHealthState = 'healthy';
 

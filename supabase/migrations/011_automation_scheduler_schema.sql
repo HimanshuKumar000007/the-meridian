@@ -60,7 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_automation_events_type ON automation_events(event
 CREATE TABLE IF NOT EXISTS automation_schedules (
     stage VARCHAR(32) PRIMARY KEY,
     enabled BOOLEAN NOT NULL DEFAULT true,
-    target_interval_minutes INT NOT NULL DEFAULT 10,
+    target_interval_minutes INT NOT NULL DEFAULT 60,
     max_batch_size INT NOT NULL DEFAULT 5,
     last_run_at TIMESTAMPTZ,
     last_success_at TIMESTAMPTZ,
@@ -75,10 +75,10 @@ CREATE TABLE IF NOT EXISTS automation_schedules (
 INSERT INTO automation_schedules (stage, enabled, target_interval_minutes, max_batch_size, next_due_at)
 VALUES 
     ('discovery', true, 60, 5, NOW()),
-    ('extraction', true, 10, 5, NOW()),
-    ('validation', true, 10, 10, NOW()),
-    ('lifecycle', true, 10, 10, NOW()),
-    ('publishing', true, 10, 5, NOW())
+    ('extraction', true, 60, 5, NOW()),
+    ('validation', true, 60, 10, NOW()),
+    ('lifecycle', true, 60, 10, NOW()),
+    ('publishing', true, 60, 5, NOW())
 ON CONFLICT (stage) DO NOTHING;
 
 -- 5. ROW LEVEL SECURITY (STRICT SERVER-SIDE ISOLATION)

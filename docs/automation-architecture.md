@@ -25,8 +25,7 @@
        ▼                    ▼                    ▼                    ▼
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │  Discovery   │     │  Extraction  │     │  Validation  │     │  Lifecycle   │
-│   (Stage)    │     │   (Stage)    │     │   (Stage)    │     │   (Stage)    │
-│  (60m Cadence│     │  (10m Cadence│     │  (10m Cadence│     │  (10m Cadence│
+│  (60m Cadence│     │  (60m Cadence│     │  (60m Cadence│     │  (60m Cadence│
 │  maxBatch 5) │     │  maxBatch 5) │     │  maxBatch 10)│     │  maxBatch 10)│
 └──────┬───────┘     └──────┬───────┘     └──────┬───────┘     └──────┬───────┘
        │                    │                    │                    │
@@ -35,7 +34,7 @@
                             ▼
               ┌───────────────────────────┐
               │     Publishing Stage      │
-              │  (10m Cadence, maxBatch 5)│
+              │  (60m Cadence, maxBatch 5)│
               │  Strict Gate Verification │
               └─────────────┬─────────────┘
                             │
@@ -61,8 +60,7 @@
   * Path: `/api/automation/orchestrator`
   * Schedule: `0 6 * * *` (Daily at 06:00 UTC).
 * **Target Automation Cadence:**
-  * Discovery: Every 60 minutes.
-  * Extraction, Validation, Lifecycle, Publishing: Every 10 minutes.
+  * Complete Pipeline (Discovery, Extraction, Validation, Lifecycle, Publishing): Every 1 hour (60 minutes).
 * **Can Current Plan Deliver Target Cadence?** **NO**.
   * The Hobby tier strictly prohibits sub-daily cron triggers.
   * The Meridian does **not** simulate or fake hourly cron in `vercel.json`.

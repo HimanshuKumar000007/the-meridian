@@ -224,7 +224,7 @@ export class PipelineOrchestrator {
             isDue = true;
           } else {
             const nextDueTime = schedule.nextDueAt ? new Date(schedule.nextDueAt).getTime() : 0;
-            const targetIntervalMs = (schedule.targetIntervalMinutes || 10) * 60 * 1000;
+            const targetIntervalMs = (schedule.targetIntervalMinutes || 60) * 60 * 1000;
             const elapsed = Date.now() - new Date(schedule.lastRunAt).getTime();
             const CLOCK_SKEW_GRACE_MS = 60 * 1000; // 60s tolerance for scheduled cron jitter
 
@@ -270,7 +270,7 @@ export class PipelineOrchestrator {
         // 6. UPDATE SCHEDULE METADATA
         if (!isDryRun && schedule) {
           const nowIso = new Date().toISOString();
-          const targetIntervalMs = (schedule.targetIntervalMinutes || 10) * 60 * 1000;
+          const targetIntervalMs = (schedule.targetIntervalMinutes || 60) * 60 * 1000;
           const nextDueAt = new Date(Date.now() + targetIntervalMs).toISOString();
 
           const updates: any = {

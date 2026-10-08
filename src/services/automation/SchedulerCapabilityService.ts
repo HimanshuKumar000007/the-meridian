@@ -16,7 +16,7 @@ export class SchedulerCapabilityService {
     requestedIntervalMinutes?: number;
     enforceTargetCadence?: boolean;
   }): PlanCapability {
-    const requestedInterval = options?.requestedIntervalMinutes ?? 10;
+    const requestedInterval = options?.requestedIntervalMinutes ?? 60;
 
     // Detect plan from environment or default to Vercel Hobby
     const envPlan = (process.env.VERCEL_PLAN || 'hobby').toLowerCase();
@@ -28,13 +28,13 @@ export class SchedulerCapabilityService {
     const supportsMinuteLevel = isProOrEnterprise;
     const minIntervalMinutes = isProOrEnterprise ? 1 : 1440; // 24 hours on Hobby
 
-    const configuredCronSchedule = isProOrEnterprise ? '*/10 * * * *' : '0 6 * * *';
+    const configuredCronSchedule = isProOrEnterprise ? '0 * * * *' : '0 6 * * *';
     const activeCadenceDescription = isProOrEnterprise
-      ? 'Minute-level / sub-hourly cron active (every 10 minutes)'
+      ? 'Hourly cron active (every 1 hour)'
       : 'Daily cron supported on Vercel Hobby (0 6 * * * / once every 24 hours)';
 
     const targetCadenceDescription =
-      'Target Cadence: Discovery every 60 min, Extraction/Validation/Lifecycle/Publishing every 10 min';
+      'Target Cadence: Pipeline execution every 1 hour (60 min)';
 
     const canDeliverTargetCadence = isProOrEnterprise || requestedInterval >= minIntervalMinutes;
 
@@ -47,7 +47,7 @@ export class SchedulerCapabilityService {
     }
 
     const upgradeOrExternalAlternative =
-      'To achieve target 10-minute cadence natively on Vercel, upgrade to Vercel Pro. Alternatively, trigger the secure POST /api/automation/orchestrator endpoint at any cadence using GitHub Actions, Supabase pg_cron, or an external webhook caller with CRON_SECRET.';
+      'To achieve target 1-hour cadence natively on Vercel, upgrade to Vercel Pro. Alternatively, trigger the secure POST /api/automation/orchestrator endpoint at any cadence using GitHub Actions, Supabase pg_cron, or an external webhook caller with CRON_SECRET.';
 
     return {
       plan,

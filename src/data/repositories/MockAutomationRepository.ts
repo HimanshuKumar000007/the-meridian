@@ -53,7 +53,7 @@ export class MockAutomationRepository implements AutomationRepository {
       this.schedules.set(stage, {
         stage,
         enabled: true,
-        targetIntervalMinutes: stage === 'discovery' ? 60 : 10,
+        targetIntervalMinutes: 60,
         maxBatchSize: stage === 'validation' || stage === 'lifecycle' ? 10 : 5,
         priority: 1,
         maxConcurrentRuns: 1,
