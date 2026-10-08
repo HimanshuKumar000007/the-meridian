@@ -8,6 +8,7 @@
  * Editorial Invariant: Never mechanically copies or paraphrases a single publisher's prose.
  */
 
+import { HybridLlmProvider } from '../extraction/HybridLlmProvider';
 import { NvidiaClient, type ExtractionLLMProvider } from '../extraction/NvidiaClient';
 import { countArticleBodyWords } from '../../utils/wordCount';
 import type { UnifiedEvidenceSet, ResearchArticleDraft } from './types';
@@ -26,9 +27,10 @@ export class ResearchArticleSynthesizer {
   private isMock: boolean;
 
   constructor(options: SynthesizerOptions = {}) {
-    this.llmProvider = options.llmProvider || new NvidiaClient();
+    const defaultProvider = new HybridLlmProvider();
+    this.llmProvider = options.llmProvider || defaultProvider;
     this.model = options.model;
-    this.isMock = Boolean(options.isMock || !process.env.NVIDIA_API_KEY);
+    this.isMock = Boolean(options.isMock || !defaultProvider.isConfigured());
   }
 
   /**

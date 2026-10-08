@@ -46,8 +46,8 @@ interface StorySeed {
   sec3Heading: string;
   sec3P1: string;
   sec3P2: string;
-  facts: Array<{ label: string; value: string }>;
-  sources: Array<{ name: string; url: string; sourceType: string }>;
+  facts?: Array<{ label: string; value: string }>;
+  sources?: Array<{ name: string; url: string; sourceType: string }>;
 }
 
 const SEED_DATA: StorySeed[] = [

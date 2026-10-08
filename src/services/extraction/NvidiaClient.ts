@@ -154,7 +154,10 @@ export class NvidiaClient implements ExtractionLLMProvider {
       );
     }
 
-    const targetModel = modelOverride || this.model;
+    const targetModel =
+      modelOverride && !modelOverride.startsWith('gemini')
+        ? modelOverride
+        : this.model;
     const effectiveMaxTokens = maxTokensOverride ?? this.maxTokens;
     const startTime = Date.now();
     let lastError: Error | null = null;

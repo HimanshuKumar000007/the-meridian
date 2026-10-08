@@ -2627,19 +2627,128 @@ var EvidenceSufficiencyEvaluator = class {
   }
 };
 
+// src/services/extraction/GeminiClient.ts
+var DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+var DEFAULT_TIMEOUT_MS2 = 4e4;
+var DEFAULT_TEMPERATURE = 0.1;
+var DEFAULT_MAX_OUTPUT_TOKENS = 8192;
+var GeminiClient = class {
+  constructor(options = {}) {
+    this.apiKey = options.apiKey || (typeof process !== "undefined" ? process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY || "" : "");
+    this.model = options.model || (typeof process !== "undefined" ? process.env.GEMINI_MODEL : void 0) || DEFAULT_GEMINI_MODEL;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS2;
+    this.temperature = options.temperature ?? DEFAULT_TEMPERATURE;
+    this.maxOutputTokens = options.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  }
+  getModelName() {
+    return this.model;
+  }
+  isConfigured() {
+    return Boolean(this.apiKey && this.apiKey.trim() !== "");
+  }
+  /**
+   * Send extraction or synthesis prompt to Google Gemini and return raw JSON output with metrics.
+   */
+  async extractStructuredNews(systemPrompt, userPrompt, modelOverride, maxTokensOverride) {
+    if (!this.isConfigured()) {
+      throw new Error(
+        "[GeminiClient] GEMINI_API_KEY environment variable is missing or empty. Set GEMINI_API_KEY in .env.local for primary Gemini inference."
+      );
+    }
+    const targetModel = modelOverride && (modelOverride.startsWith("gemini") || !modelOverride.includes("/")) ? modelOverride : this.model;
+    const effectiveMaxTokens = maxTokensOverride ?? this.maxOutputTokens;
+    const startTime = Date.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${encodeURIComponent(
+        this.apiKey
+      )}`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent": "TheMeridian/1.0 (EditorialExtractionEngine-Gemini)"
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: systemPrompt }]
+          },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: userPrompt }]
+            }
+          ],
+          generationConfig: {
+            temperature: this.temperature,
+            maxOutputTokens: effectiveMaxTokens,
+            responseMimeType: "application/json"
+          }
+        }),
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw new Error(
+          `[GeminiClient] HTTP ${response.status} ${response.statusText}: ${errorBody.slice(0, 300)}`
+        );
+      }
+      const data = await response.json();
+      const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      if (!rawContent) {
+        throw new Error("[GeminiClient] Empty or unparsed candidate response received from Gemini API");
+      }
+      const cleanedJson = this.sanitizeJsonOutput(rawContent);
+      const durationMs = Date.now() - startTime;
+      return {
+        rawJson: cleanedJson,
+        model: targetModel,
+        durationMs,
+        tokensUsed: data.usageMetadata?.totalTokenCount
+      };
+    } catch (err) {
+      const isTimeout = err.name === "AbortError" || err.message?.includes("aborted");
+      if (isTimeout) {
+        throw new Error(`[GeminiClient] Request timed out after ${this.timeoutMs}ms`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+  /**
+   * Sanitizes output to extract pure JSON, stripping markdown code block fences if present.
+   */
+  sanitizeJsonOutput(raw) {
+    let clean = raw.trim();
+    const codeBlockMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (codeBlockMatch) {
+      clean = codeBlockMatch[1].trim();
+    }
+    const firstBrace = clean.indexOf("{");
+    const lastBrace = clean.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      clean = clean.slice(firstBrace, lastBrace + 1);
+    }
+    return clean;
+  }
+};
+
 // src/services/extraction/NvidiaClient.ts
 var DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 var DEFAULT_MODEL = "openai/gpt-oss-20b";
-var DEFAULT_TIMEOUT_MS2 = 55e3;
-var DEFAULT_TEMPERATURE = 0.1;
+var DEFAULT_TIMEOUT_MS3 = 55e3;
+var DEFAULT_TEMPERATURE2 = 0.1;
 var DEFAULT_MAX_TOKENS = 4096;
 var NvidiaClient = class {
   constructor(options = {}) {
     this.apiKey = options.apiKey || (typeof process !== "undefined" ? process.env.NVIDIA_API_KEY || "" : "");
     this.baseUrl = (options.baseUrl || (typeof process !== "undefined" ? process.env.NVIDIA_API_BASE_URL : void 0) || DEFAULT_BASE_URL).replace(/\/+$/, "");
     this.model = options.model || (typeof process !== "undefined" ? process.env.NVIDIA_MODEL : void 0) || DEFAULT_MODEL;
-    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS2;
-    this.temperature = options.temperature ?? DEFAULT_TEMPERATURE;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS3;
+    this.temperature = options.temperature ?? DEFAULT_TEMPERATURE2;
     this.maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
   }
   getModelName() {
@@ -2687,7 +2796,7 @@ var NvidiaClient = class {
         "[NvidiaClient] NVIDIA_API_KEY environment variable is missing or empty. Set NVIDIA_API_KEY in .env.local for server-side extraction."
       );
     }
-    const targetModel = modelOverride || this.model;
+    const targetModel = modelOverride && !modelOverride.startsWith("gemini") ? modelOverride : this.model;
     const effectiveMaxTokens = maxTokensOverride ?? this.maxTokens;
     const startTime = Date.now();
     let lastError = null;
@@ -2768,6 +2877,74 @@ var NvidiaClient = class {
       clean = clean.slice(firstBrace, lastBrace + 1);
     }
     return clean;
+  }
+};
+
+// src/services/extraction/HybridLlmProvider.ts
+var HybridLlmProvider = class {
+  constructor(options = {}) {
+    this.primary = new GeminiClient(options.geminiOptions);
+    this.secondary = new NvidiaClient(options.nvidiaOptions);
+  }
+  getPrimary() {
+    return this.primary;
+  }
+  getSecondary() {
+    return this.secondary;
+  }
+  getModelName() {
+    if (this.primary.isConfigured() && this.secondary.isConfigured()) {
+      return `${this.primary.getModelName()} (Primary: Gemini) [Fallback: NVIDIA NIM]`;
+    }
+    if (this.primary.isConfigured()) {
+      return `${this.primary.getModelName()} (Primary: Gemini)`;
+    }
+    if (this.secondary.isConfigured()) {
+      return `${this.secondary.getModelName()} (Secondary: NVIDIA NIM)`;
+    }
+    return "unconfigured";
+  }
+  isConfigured() {
+    return this.primary.isConfigured() || this.secondary.isConfigured();
+  }
+  /**
+   * Extracts structured news or synthesizes articles.
+   * Tries Primary (Gemini) first. If it fails, falls back automatically to Secondary (NVIDIA).
+   */
+  async extractStructuredNews(systemPrompt, userPrompt, modelOverride, maxTokensOverride) {
+    if (this.primary.isConfigured()) {
+      try {
+        const result = await this.primary.extractStructuredNews(
+          systemPrompt,
+          userPrompt,
+          modelOverride,
+          maxTokensOverride
+        );
+        return result;
+      } catch (geminiError) {
+        console.warn(
+          `[HybridLlmProvider] Primary provider (Gemini) failed: ${geminiError.message}. Falling back to Secondary provider (NVIDIA)...`
+        );
+      }
+    }
+    if (this.secondary.isConfigured()) {
+      try {
+        const result = await this.secondary.extractStructuredNews(
+          systemPrompt,
+          userPrompt,
+          modelOverride,
+          maxTokensOverride
+        );
+        return result;
+      } catch (nvidiaError) {
+        throw new Error(
+          `[HybridLlmProvider] Both providers failed. Gemini failed earlier, and NVIDIA error: ${nvidiaError.message}`
+        );
+      }
+    }
+    throw new Error(
+      "[HybridLlmProvider] No LLM provider is configured. Please set GEMINI_API_KEY (primary) or NVIDIA_API_KEY (secondary) in .env.local."
+    );
   }
 };
 
@@ -2854,9 +3031,10 @@ function countArticleBodyWords(contentOrStory) {
 // src/services/research/ResearchArticleSynthesizer.ts
 var ResearchArticleSynthesizer = class {
   constructor(options = {}) {
-    this.llmProvider = options.llmProvider || new NvidiaClient();
+    const defaultProvider = new HybridLlmProvider();
+    this.llmProvider = options.llmProvider || defaultProvider;
     this.model = options.model;
-    this.isMock = Boolean(options.isMock || !process.env.NVIDIA_API_KEY);
+    this.isMock = Boolean(options.isMock || !defaultProvider.isConfigured());
   }
   /**
    * System Prompt instructing NVIDIA to act as an original editorial synthesis engine in British English.
@@ -3682,6 +3860,23 @@ export {
  * The Meridian — Global News Platform
  * EvidenceSufficiencyEvaluator: Pre-NVIDIA gate evaluating whether verified factual evidence
  * is sufficient to support a legitimate, substantive 700+ word article without fabrication.
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Primary Server-Side Google Gemini Inference Client.
+ * Communicates with Google Gemini API (gemini-2.5-flash by default) for high-speed,
+ * structured, hallucination-free news extraction and original journalistic synthesis.
+ */
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Hybrid LLM Provider for The Meridian.
+ * Simple, resilient, best-in-class multi-model orchestration:
+ * - PRIMARY: Google Gemini (gemini-2.5-flash) for instant, high-quality structured generation
+ * - SECONDARY: NVIDIA NIM (NvidiaClient) automatic fallback on any rate limit, quota, or service outage
  */
 /**
  * @license

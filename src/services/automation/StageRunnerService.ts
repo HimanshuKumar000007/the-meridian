@@ -16,6 +16,7 @@ import { MockDiscoveryRepository } from '../../data/repositories/MockDiscoveryRe
 import { INITIAL_NEWS_SOURCES } from '../../data/sources/initialSources';
 
 import { ExtractionEngine } from '../extraction/ExtractionEngine';
+import { HybridLlmProvider } from '../extraction/HybridLlmProvider';
 import { NvidiaClient } from '../extraction/NvidiaClient';
 import { MockExtractionProvider } from '../extraction/MockExtractionProvider';
 import { SupabaseExtractionRepository } from '../../data/repositories/SupabaseExtractionRepository';
@@ -188,9 +189,8 @@ export class StageRunnerService {
         };
       }
 
-      const apiKey = process.env.NVIDIA_API_KEY;
-      const useNvidia = !this.isMock && Boolean(apiKey);
-      const llmProvider = useNvidia ? new NvidiaClient({ apiKey }) : new MockExtractionProvider();
+      const hybrid = new HybridLlmProvider();
+      const llmProvider = !this.isMock && hybrid.isConfigured() ? hybrid : new MockExtractionProvider();
 
       const engine = new ExtractionEngine({ llmProvider, repository: repo });
 

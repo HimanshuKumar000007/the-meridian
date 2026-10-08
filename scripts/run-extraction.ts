@@ -14,6 +14,7 @@ dotenv.config();
 dotenv.config({ path: '.env.local', override: true });
 
 import { ExtractionEngine } from '../src/services/extraction/ExtractionEngine';
+import { HybridLlmProvider } from '../src/services/extraction/HybridLlmProvider';
 import { NvidiaClient } from '../src/services/extraction/NvidiaClient';
 import { MockExtractionProvider } from '../src/services/extraction/MockExtractionProvider';
 import { SupabaseExtractionRepository } from '../src/data/repositories/SupabaseExtractionRepository';
@@ -86,14 +87,14 @@ async function main() {
     repository = new MockExtractionRepository();
   }
 
-  const apiKey = process.env.NVIDIA_API_KEY;
-  const useNvidia = !options.mock && Boolean(apiKey);
+  const hybrid = new HybridLlmProvider({
+    geminiOptions: options.model ? { model: options.model } : undefined,
+    nvidiaOptions: options.model ? { model: options.model } : undefined,
+  });
+  const useLlm = !options.mock && hybrid.isConfigured();
+  const llmProvider = useLlm ? hybrid : new MockExtractionProvider();
 
-  const llmProvider = useNvidia
-    ? new NvidiaClient({ apiKey, model: options.model })
-    : new MockExtractionProvider();
-
-  console.log(`[Runner] Engine Provider: ${useNvidia ? `NVIDIA AI (${(llmProvider as NvidiaClient).getModelName()})` : 'Mock Provider'}`);
+  console.log(`[Runner] Engine Provider: ${useLlm ? hybrid.getModelName() : 'Mock Provider'}`);
 
   const engine = new ExtractionEngine({
     llmProvider,
